@@ -24,6 +24,8 @@ type EntryFields = {
   recurring_lost: number;
   total_recurring_clients: number;
   cleans_completed: number;
+  recurring_cleans: number;
+  one_time_cleans: number;
   skips: number;
   route_changes: number;
   care_opportunities: number;
@@ -55,6 +57,8 @@ const DEFAULT_ENTRY: EntryFields = {
   recurring_lost: 0,
   total_recurring_clients: 0,
   cleans_completed: 0,
+  recurring_cleans: 0,
+  one_time_cleans: 0,
   skips: 0,
   route_changes: 0,
   care_opportunities: 0,
@@ -114,6 +118,8 @@ const SCHEDULING_FIELDS: [keyof EntryFields, string][] = [
   ["recurring_lost", "Recurring Lost"],
   ["total_recurring_clients", "Total Recurring Clients"],
   ["cleans_completed", "Cleans Completed"],
+  ["recurring_cleans", "Recurring Cleans"],
+  ["one_time_cleans", "One-Time Cleans"],
   ["skips", "Skips"],
   ["route_changes", "Route Changes"],
 ];
