@@ -290,7 +290,7 @@ export default function WeeklyOpsPage() {
                       {idxs.map((i) => {
                         const future = i > TODAY_IDX;
                         const rows = weekRowsMap.get(i) || [];
-                        const val = future ? null : row.compute(rows);
+                        const val = future || rows.length === 0 ? null : row.compute(rows);
                         return (
                           <td key={i} className={i === TODAY_IDX ? "wk-current" : ""}>
                             {fmtCell(val, row.fmt)}
