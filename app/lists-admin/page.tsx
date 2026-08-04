@@ -15,7 +15,18 @@ type KpiRow = {
   critical_label: string | null;
   owner: string;
   off_track_action: string;
+  critical_below: number | null;
+  warning_below: number | null;
+  warning_above: number | null;
+  critical_above: number | null;
 };
+
+const THRESHOLD_FIELDS: { field: keyof KpiRow; label: string }[] = [
+  { field: "critical_below", label: "Critical below" },
+  { field: "warning_below", label: "Warning below" },
+  { field: "warning_above", label: "Warning above" },
+  { field: "critical_above", label: "Critical above" },
+];
 
 type TeamRow = {
   id: string;
@@ -44,6 +55,15 @@ export default function ListsAdminPage() {
   }, [unlocked]);
 
   async function saveKpiField(kpi_key: string, field: keyof KpiRow, value: string) {
+    setKpis((prev) => prev.map((k) => (k.kpi_key === kpi_key ? { ...k, [field]: value } : k)));
+    await supabase.from("kpi_config").update({ [field]: value }).eq("kpi_key", kpi_key);
+    setSavedKey(kpi_key);
+    setTimeout(() => setSavedKey((k) => (k === kpi_key ? null : k)), 1500);
+  }
+
+  async function saveThreshold(kpi_key: string, field: keyof KpiRow, raw: string) {
+    const value = raw.trim() === "" ? null : Number(raw);
+    if (value !== null && Number.isNaN(value)) return;
     setKpis((prev) => prev.map((k) => (k.kpi_key === kpi_key ? { ...k, [field]: value } : k)));
     await supabase.from("kpi_config").update({ [field]: value }).eq("kpi_key", kpi_key);
     setSavedKey(kpi_key);
@@ -83,7 +103,11 @@ export default function ListsAdminPage() {
           <div className="section">
             <div className="section-head">
               <h2>KPI Targets &amp; Off-Track Actions</h2>
-              <div className="desc">Editable — changes save automatically and immediately affect the CEO Dashboard.</div>
+              <div className="desc">
+                Good/Watch/Critical text is just the description shown on the dashboard. The four number columns on the
+                right are what actually set the dashboard&apos;s colors — change a number here and the CEO Dashboard
+                updates immediately.
+              </div>
             </div>
             <div style={{ overflowX: "auto" }}>
               <table>
@@ -96,6 +120,9 @@ export default function ListsAdminPage() {
                     <th>Critical</th>
                     <th>Owner</th>
                     <th>If off track…</th>
+                    {THRESHOLD_FIELDS.map((tf) => (
+                      <th key={tf.field as string}>{tf.label}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -120,6 +147,23 @@ export default function ListsAdminPage() {
                       <td>
                         <textarea defaultValue={k.off_track_action} onBlur={(e) => saveKpiField(k.kpi_key, "off_track_action", e.target.value)} />
                       </td>
+                      {k.kpi_key === "total_recurring_clients" ? (
+                        <td colSpan={4} className="no-threshold">
+                          Based on trend vs. last month — no number to set.
+                        </td>
+                      ) : (
+                        THRESHOLD_FIELDS.map((tf) => (
+                          <td key={tf.field as string}>
+                            <input
+                              className="num"
+                              type="number"
+                              inputMode="decimal"
+                              defaultValue={k[tf.field] ?? ("" as any)}
+                              onBlur={(e) => saveThreshold(k.kpi_key, tf.field, e.target.value)}
+                            />
+                          </td>
+                        ))
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -275,10 +319,19 @@ export default function ListsAdminPage() {
         input {
           width: 110px;
         }
+        input.num {
+          width: 84px;
+        }
         textarea {
           width: 260px;
           min-height: 60px;
           resize: vertical;
+        }
+        .no-threshold {
+          color: var(--ink-faint);
+          font-size: 12px;
+          font-style: italic;
+          white-space: nowrap;
         }
         input:focus,
         textarea:focus {

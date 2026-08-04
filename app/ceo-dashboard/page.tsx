@@ -9,13 +9,17 @@ import { useCeoAuth } from "@/lib/useCeoAuth";
 import { supabase } from "@/lib/supabase";
 import { weekStart, weekEnd, toDateStr, weekIndexForDateStr, todayWeekIndex } from "@/lib/weeks";
 import { monthStart, monthEnd, currentMonthIndex, monthIndexForDateStr } from "@/lib/months";
-import { SECTIONS, fmtCell, STATUS_FNS, WHY_TEXT, type Row, type Status } from "@/lib/metrics";
+import { SECTIONS, fmtCell, computeStatus, WHY_TEXT, type Row, type Status } from "@/lib/metrics";
 
 type KpiConfigRow = {
   kpi_key: string;
   target_label: string;
   owner: string;
   off_track_action: string;
+  critical_below: number | null;
+  warning_below: number | null;
+  warning_above: number | null;
+  critical_above: number | null;
 };
 
 const STATUS_LABEL: Record<Status, string> = { good: "On Track", warning: "Watch", critical: "Off Track" };
@@ -40,7 +44,9 @@ export default function CeoDashboardPage() {
     (async () => {
       setDataLoading(true);
 
-      const { data: cfgData } = await supabase.from("kpi_config").select("kpi_key, target_label, owner, off_track_action");
+      const { data: cfgData } = await supabase
+        .from("kpi_config")
+        .select("kpi_key, target_label, owner, off_track_action, critical_below, warning_below, warning_above, critical_above");
       if (!cancelled && cfgData) {
         const map: Record<string, KpiConfigRow> = {};
         cfgData.forEach((c: KpiConfigRow) => (map[c.kpi_key] = c));
@@ -93,8 +99,8 @@ export default function CeoDashboardPage() {
     const rows = weekRowsMap.get(i) || [];
     return rows.length ? heroMetric.compute(rows) : null;
   });
-  const heroStatus: Status | null = heroVal !== null ? STATUS_FNS.gross_revenue(heroVal) : null;
   const heroCfg = config["gross_revenue"];
+  const heroStatus: Status | null = heroVal !== null ? computeStatus("gross_revenue", heroVal, null, heroCfg) : null;
 
   const kpiSections = SECTIONS.map((sec) => ({
     title: sec.title,
@@ -187,7 +193,7 @@ export default function CeoDashboardPage() {
                     eyebrow = "This week";
                   }
 
-                  const status: Status | null = value !== null ? STATUS_FNS[row.key](value, prev) : null;
+                  const status: Status | null = value !== null ? computeStatus(row.key, value, prev, cfg) : null;
                   const isOpen = openKey === row.key;
 
                   return (

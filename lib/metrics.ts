@@ -192,24 +192,34 @@ export function fmtCell(v: number | null | undefined, fmt: Fmt): string {
   return Math.round(v).toLocaleString();
 }
 
-// ---- CEO Dashboard status thresholds (mirrors the approved Lists/Admin bands) ----
+// ---- CEO Dashboard status thresholds ----
+// Driven live by the numeric threshold columns on kpi_config (editable from
+// Lists/Admin), not hardcoded — the CEO can move these and the dashboard's
+// colors follow. total_recurring_clients is the one exception: its status
+// compares this month's count to last month's, not to a fixed number.
 export type Status = "good" | "warning" | "critical";
 
-export const STATUS_FNS: Record<string, (v: number, prev?: number | null) => Status> = {
-  gross_revenue: (v) => (v < 16500 ? "critical" : v < 17500 ? "warning" : "good"),
-  payroll_pct: (v) => (v >= 48 && v <= 52 ? "good" : (v >= 45 && v < 48) || (v > 52 && v <= 55) ? "warning" : "critical"),
-  avg_rev_per_rge: (v) => (v < 1300 ? "critical" : v < 1400 ? "warning" : "good"),
-  total_recurring_clients: (v, prev) => (prev == null ? "good" : v > prev ? "good" : v === prev ? "warning" : "critical"),
-  net_recurring_growth: (v) => (v >= 3 ? "good" : v >= 0 ? "warning" : "critical"),
-  attrition_rate: (v) => (v <= 3 ? "good" : v <= 3.75 ? "warning" : "critical"),
-  initial_to_recurring: (v) => (v < 44 ? "critical" : v < 50 ? "warning" : "good"),
-  contact_rate: (v) => (v < 44 ? "critical" : v < 50 ? "warning" : "good"),
-  lead_to_booking: (v) => (v < 21 ? "critical" : v < 25 ? "warning" : "good"),
-  contact_to_booking: (v) => (v <= 40 ? "critical" : v < 45 ? "warning" : v <= 70 ? "good" : "warning"),
-  interview_show_up: (v) => (v < 40 ? "critical" : v < 45 ? "warning" : "good"),
-  rges_tier3_pct: (v) => (v < 30 || v >= 60 ? "critical" : "good"),
-  hire_conversion: (v) => (v < 8 ? "critical" : v < 12 ? "warning" : "good"),
+export type Thresholds = {
+  critical_below?: number | null;
+  warning_below?: number | null;
+  warning_above?: number | null;
+  critical_above?: number | null;
 };
+
+export function computeStatus(key: string, v: number, prev: number | null | undefined, t: Thresholds | undefined): Status {
+  if (key === "total_recurring_clients") {
+    if (prev == null) return "good";
+    if (v > prev) return "good";
+    if (v === prev) return "warning";
+    return "critical";
+  }
+  if (!t) return "good";
+  if (t.critical_below != null && v < t.critical_below) return "critical";
+  if (t.warning_below != null && v < t.warning_below) return "warning";
+  if (t.critical_above != null && v > t.critical_above) return "critical";
+  if (t.warning_above != null && v > t.warning_above) return "warning";
+  return "good";
+}
 
 // ---- "Why it matters" copy for the CEO Dashboard info panels (static, not editable via Lists/Admin) ----
 export const WHY_TEXT: Record<string, string> = {
