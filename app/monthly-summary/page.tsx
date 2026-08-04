@@ -1,60 +1,53 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Logo from "@/components/Logo";
 import NavTabs from "@/components/NavTabs";
 import IdentityGate from "@/components/IdentityGate";
 import { useIdentity } from "@/lib/useIdentity";
 import { supabase } from "@/lib/supabase";
-import { WEEK_COUNT, weekStart, weekEnd, toDateStr, weekIndexForDateStr, todayWeekIndex, fmtWeekLabel } from "@/lib/weeks";
+import { toDateStr } from "@/lib/weeks";
+import { MONTH_NAMES, monthStart, monthEnd, currentMonthIndex, monthIndexForDateStr } from "@/lib/months";
 import { SECTIONS, fmtCell, type Row } from "@/lib/metrics";
 
-const RANGE_OPTIONS = [8, 13, 52];
-
-export default function WeeklyOpsPage() {
+export default function MonthlySummaryPage() {
   const { person, loading, signIn, switchUser } = useIdentity();
-  const [rangeN, setRangeN] = useState(13);
-  const [weekRowsMap, setWeekRowsMap] = useState<Map<number, Row[]>>(new Map());
+  const [monthRowsMap, setMonthRowsMap] = useState<Map<number, Row[]>>(new Map());
   const [dataLoading, setDataLoading] = useState(false);
 
-  const TODAY_IDX = todayWeekIndex();
-
-  const idxs = useMemo(() => {
-    if (rangeN >= WEEK_COUNT) return Array.from({ length: WEEK_COUNT }, (_, i) => i);
-    const start = Math.max(0, TODAY_IDX - rangeN + 1);
-    const arr: number[] = [];
-    for (let i = start; i <= TODAY_IDX; i++) arr.push(i);
-    return arr;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeN, TODAY_IDX]);
+  const TODAY_MONTH = currentMonthIndex();
 
   useEffect(() => {
     if (!person) return;
     let cancelled = false;
     (async () => {
       setDataLoading(true);
-      const startStr = toDateStr(weekStart(idxs[0]));
-      const lastVisible = Math.min(idxs[idxs.length - 1], TODAY_IDX);
-      const endStr = toDateStr(weekEnd(lastVisible));
+      const startStr = toDateStr(monthStart(0));
+      const endStr = toDateStr(monthEnd(TODAY_MONTH));
       const { data } = await supabase.from("daily_entries").select("*").gte("entry_date", startStr).lte("entry_date", endStr);
       if (cancelled) return;
       const map = new Map<number, Row[]>();
       (data || []).forEach((row: Row) => {
-        const idx = weekIndexForDateStr(row.entry_date);
+        const idx = monthIndexForDateStr(row.entry_date);
         if (!map.has(idx)) map.set(idx, []);
         map.get(idx)!.push(row);
       });
-      setWeekRowsMap(map);
+      setMonthRowsMap(map);
       setDataLoading(false);
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [person, idxs.join(",")]);
+  }, [person]);
 
   if (loading) return null;
   if (!person) return <IdentityGate onVerified={signIn} />;
+
+  const ytdRows: Row[] = [];
+  for (let m = 0; m <= TODAY_MONTH; m++) {
+    ytdRows.push(...(monthRowsMap.get(m) || []));
+  }
 
   return (
     <div className="wrap">
@@ -63,8 +56,8 @@ export default function WeeklyOpsPage() {
           <Logo height={44} />
           <div className="brand-divider" />
           <div className="brand-text">
-            <h1>Weekly Ops</h1>
-            <div className="sub">All 52 weeks — the full operational view</div>
+            <h1>Monthly Summary</h1>
+            <div className="sub">Auto-calculated from Daily Entry — nothing entered here manually</div>
           </div>
         </div>
         <div className="userbadge">
@@ -76,17 +69,9 @@ export default function WeeklyOpsPage() {
 
       <NavTabs />
 
-      <div className="controls">
-        <div className="range-pick">
-          {RANGE_OPTIONS.map((n) => (
-            <button key={n} className={rangeN === n ? "active" : ""} onClick={() => setRangeN(n)}>
-              {n >= WEEK_COUNT ? "All 52 weeks" : `Last ${n} weeks`}
-            </button>
-          ))}
-        </div>
-        <div className="legend-note">
-          <span className="star">★</span> also on the CEO Dashboard (13 True KPIs)
-        </div>
+      <div className="legend-note">
+        <span className="star">★</span> also on the CEO Dashboard (13 True KPIs) &nbsp;·&nbsp;
+        <span className="ytd-label">YTD</span> = Jan through the current month
       </div>
 
       <div className="table-shell">
@@ -97,18 +82,19 @@ export default function WeeklyOpsPage() {
             <thead>
               <tr>
                 <th>Metric</th>
-                {idxs.map((i) => (
-                  <th key={i} className={i === TODAY_IDX ? "wk-current" : ""}>
-                    {fmtWeekLabel(weekStart(i))}
+                {MONTH_NAMES.map((name, m) => (
+                  <th key={m} className={m === TODAY_MONTH ? "mo-current" : ""}>
+                    {name}
                   </th>
                 ))}
+                <th className="ytd">YTD</th>
               </tr>
             </thead>
             <tbody>
               {SECTIONS.map((sec) => (
                 <>
                   <tr className="section-row" key={sec.title}>
-                    <th colSpan={idxs.length + 1}>{sec.title}</th>
+                    <th colSpan={14}>{sec.title}</th>
                   </tr>
                   {sec.rows.map((row) => (
                     <tr key={row.key}>
@@ -116,16 +102,17 @@ export default function WeeklyOpsPage() {
                         {row.trueKPI && <span className="kpi-star">★</span>}
                         {row.label}
                       </th>
-                      {idxs.map((i) => {
-                        const future = i > TODAY_IDX;
-                        const rows = weekRowsMap.get(i) || [];
+                      {MONTH_NAMES.map((_, m) => {
+                        const future = m > TODAY_MONTH;
+                        const rows = monthRowsMap.get(m) || [];
                         const val = future || rows.length === 0 ? null : row.compute(rows);
                         return (
-                          <td key={i} className={i === TODAY_IDX ? "wk-current" : ""}>
+                          <td key={m} className={m === TODAY_MONTH ? "mo-current" : ""}>
                             {fmtCell(val, row.fmt)}
                           </td>
                         );
                       })}
+                      <td className="ytd">{fmtCell(ytdRows.length === 0 ? null : row.compute(ytdRows), row.fmt)}</td>
                     </tr>
                   ))}
                 </>
@@ -196,52 +183,26 @@ export default function WeeklyOpsPage() {
           border-radius: 999px;
           cursor: pointer;
         }
-        .controls {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          flex-wrap: wrap;
-          margin-bottom: 14px;
-        }
-        .range-pick {
-          display: flex;
-          gap: 4px;
-          background: var(--surface);
-          border: 1px solid var(--line);
-          border-radius: 999px;
-          padding: 4px;
-        }
-        .range-pick button {
-          border: none;
-          background: transparent;
-          color: var(--ink-muted);
-          font-size: 12.5px;
-          font-weight: 600;
-          padding: 6px 13px;
-          border-radius: 999px;
-          cursor: pointer;
-        }
-        .range-pick button.active {
-          background: var(--accent);
-          color: var(--accent-ink);
-        }
         .legend-note {
           font-size: 12px;
           color: var(--ink-faint);
           display: flex;
           align-items: center;
           gap: 6px;
+          margin-bottom: 14px;
         }
         .legend-note .star {
           color: var(--accent);
+        }
+        .ytd-label {
+          color: var(--green);
+          font-weight: 700;
         }
         .table-shell {
           background: var(--surface);
           border: 1px solid var(--line);
           border-radius: 12px;
           overflow: auto;
-          max-height: 72vh;
         }
         .loading {
           padding: 40px;
@@ -251,7 +212,7 @@ export default function WeeklyOpsPage() {
         table {
           border-collapse: separate;
           border-spacing: 0;
-          font-size: 13px;
+          font-size: 14px;
           white-space: nowrap;
           width: 100%;
           min-width: 100%;
@@ -262,13 +223,18 @@ export default function WeeklyOpsPage() {
           z-index: 2;
           background: var(--surface-2);
           border-bottom: 1px solid var(--line);
-          padding: 10px 14px;
+          padding: 12px 16px;
           font-weight: 700;
           text-align: right;
           color: var(--ink-muted);
         }
-        thead :global(th.wk-current) {
+        thead :global(th.mo-current) {
           color: var(--accent);
+        }
+        thead :global(th.ytd) {
+          color: var(--ink);
+          background: var(--green-soft);
+          border-left: 2px solid var(--green);
         }
         thead :global(th:first-child) {
           position: sticky;
@@ -276,12 +242,12 @@ export default function WeeklyOpsPage() {
           top: 0;
           z-index: 3;
           text-align: left;
-          min-width: 220px;
+          min-width: 240px;
           background: var(--surface-2);
         }
         tbody :global(td),
         tbody :global(th) {
-          padding: 9px 14px;
+          padding: 11px 16px;
           text-align: right;
           border-bottom: 1px solid var(--line);
         }
@@ -298,8 +264,13 @@ export default function WeeklyOpsPage() {
         tbody :global(tr:hover th) {
           background: var(--surface-2);
         }
-        tbody :global(td.wk-current) {
+        tbody :global(td.mo-current) {
           background: var(--accent-soft);
+        }
+        tbody :global(td.ytd) {
+          background: var(--green-soft);
+          border-left: 2px solid var(--green);
+          font-weight: 700;
         }
         :global(tr.section-row th) {
           position: sticky;
@@ -311,7 +282,7 @@ export default function WeeklyOpsPage() {
           text-transform: uppercase;
           letter-spacing: 0.05em;
           text-align: left;
-          padding: 12px 14px 6px;
+          padding: 12px 16px 6px;
           border-bottom: none;
         }
         .kpi-star {
