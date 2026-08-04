@@ -199,8 +199,32 @@ export const ALL_METRICS: MetricDef[] = SECTIONS.flatMap((s) => s.rows);
 // not the metric run once over the whole stack of rows.
 const PERIOD_SENSITIVE_KEYS = new Set(["avg_rev_per_rge"]);
 
+// Payroll % is a fine ratio-of-sums *when every week in the period actually
+// has payroll entered* -- but total_payroll_taxes only ever gets filled in
+// on Mondays, so a week that's missing it entirely still contributes its
+// real revenue to the denominator while adding $0 to the payroll side,
+// silently dragging the whole period's % down. Over a single week
+// (Weekly Ops) that's caught by payroll_pct's own null-guard above. Over a
+// month/YTD it isn't, unless the weeks with no payroll data are dropped
+// from the sum entirely rather than counted as $0.
+const WEEK_FILTERED_KEYS = new Set(["payroll_pct"]);
+
 export function computeOverPeriod(row: MetricDef, rows: Row[]): number | null {
   if (!rows.length) return null;
+  if (WEEK_FILTERED_KEYS.has(row.key)) {
+    const byWeek = new Map<number, Row[]>();
+    for (const r of rows) {
+      const wi = weekIndexForDateStr(r.entry_date);
+      if (!byWeek.has(wi)) byWeek.set(wi, []);
+      byWeek.get(wi)!.push(r);
+    }
+    const completeRows: Row[] = [];
+    byWeek.forEach((wRows) => {
+      const hasPayroll = wRows.some((r) => r.total_payroll_taxes !== null && r.total_payroll_taxes !== undefined);
+      if (hasPayroll) completeRows.push(...wRows);
+    });
+    return completeRows.length ? row.compute(completeRows) : null;
+  }
   if (!PERIOD_SENSITIVE_KEYS.has(row.key)) return row.compute(rows);
   const byWeek = new Map<number, Row[]>();
   for (const r of rows) {
