@@ -21,11 +21,21 @@ export function toDateStr(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// Counts calendar days between two dates using their UTC-midnight equivalents.
+// Plain (date.getTime() - other.getTime()) / 86400000 is NOT safe here: it
+// silently loses/gains an hour across a Daylight Saving transition (this
+// range spans one, in March), which throws the day count off by one and
+// shifts every week index by one. Date.UTC() sidesteps DST entirely.
+function daysBetween(a: Date, b: Date): number {
+  const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((utcB - utcA) / 86400000);
+}
+
 export function weekIndexForDateStr(dateStr: string): number {
   const [y, m, d] = dateStr.split("-").map(Number);
   const date = new Date(y, m - 1, d);
-  const diffDays = Math.floor((date.getTime() - MIN_DATE.getTime()) / 86400000);
-  return Math.floor(diffDays / 7);
+  return Math.floor(daysBetween(MIN_DATE, date) / 7);
 }
 
 export function todayWeekIndex(): number {
@@ -33,8 +43,7 @@ export function todayWeekIndex(): number {
   now.setHours(0, 0, 0, 0);
   if (now < MIN_DATE) return 0;
   if (now > MAX_DATE) return WEEK_COUNT - 1;
-  const diffDays = Math.floor((now.getTime() - MIN_DATE.getTime()) / 86400000);
-  return Math.min(WEEK_COUNT - 1, Math.floor(diffDays / 7));
+  return Math.min(WEEK_COUNT - 1, Math.floor(daysBetween(MIN_DATE, now) / 7));
 }
 
 export function fmtWeekLabel(d: Date): string {
