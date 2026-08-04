@@ -4,6 +4,8 @@
 // the math is period-agnostic) and returns a single number, or null if
 // the inputs don't support a value.
 
+import { weekIndexForDateStr } from "./weeks";
+
 export type Row = Record<string, any>;
 
 export function sumField(rows: Row[], field: string): number {
@@ -55,6 +57,11 @@ export const SECTIONS: { title: string; rows: MetricDef[] }[] = [
         trueKPI: true,
         cadence: "weekly",
         compute: (r) => {
+          // total_payroll_taxes is only ever filled in on Mondays. If NONE of
+          // the rows in this period have a real value, that's "not entered
+          // yet" — show blank, not a misleading 0%.
+          const hasPayroll = r.some((row) => row.total_payroll_taxes !== null && row.total_payroll_taxes !== undefined);
+          if (!hasPayroll) return null;
           const rev = sumField(r, "daily_revenue");
           const payroll = sumField(r, "total_payroll_taxes");
           return rev > 0 ? Math.round((payroll / rev) * 1000) / 10 : null;
@@ -182,6 +189,33 @@ export const SECTIONS: { title: string; rows: MetricDef[] }[] = [
 ];
 
 export const ALL_METRICS: MetricDef[] = SECTIONS.flatMap((s) => s.rows);
+
+// Some metrics divide a period SUM by a period AVERAGE (e.g. Average Revenue
+// per RGE = revenue summed over the period ÷ headcount averaged over the
+// period). That only means "per week" when the period IS a week. Run it
+// across a whole month instead and the sum grows ~4.3x (a month's worth of
+// weeks) while the averaged headcount doesn't, inflating the result ~4.3x.
+// For these, a monthly/YTD view needs the average of each week's own value,
+// not the metric run once over the whole stack of rows.
+const PERIOD_SENSITIVE_KEYS = new Set(["avg_rev_per_rge"]);
+
+export function computeOverPeriod(row: MetricDef, rows: Row[]): number | null {
+  if (!rows.length) return null;
+  if (!PERIOD_SENSITIVE_KEYS.has(row.key)) return row.compute(rows);
+  const byWeek = new Map<number, Row[]>();
+  for (const r of rows) {
+    const wi = weekIndexForDateStr(r.entry_date);
+    if (!byWeek.has(wi)) byWeek.set(wi, []);
+    byWeek.get(wi)!.push(r);
+  }
+  const weekVals: number[] = [];
+  byWeek.forEach((wRows) => {
+    const v = row.compute(wRows);
+    if (v !== null && v !== undefined) weekVals.push(v);
+  });
+  if (!weekVals.length) return null;
+  return Math.round(weekVals.reduce((a, b) => a + b, 0) / weekVals.length);
+}
 
 export function fmtCell(v: number | null | undefined, fmt: Fmt): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";

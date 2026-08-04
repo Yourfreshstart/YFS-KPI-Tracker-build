@@ -8,7 +8,7 @@ import { useIdentity } from "@/lib/useIdentity";
 import { supabase } from "@/lib/supabase";
 import { toDateStr } from "@/lib/weeks";
 import { MONTH_NAMES, monthStart, monthEnd, currentMonthIndex, monthIndexForDateStr } from "@/lib/months";
-import { SECTIONS, fmtCell, type Row } from "@/lib/metrics";
+import { SECTIONS, fmtCell, computeOverPeriod, type Row } from "@/lib/metrics";
 
 export default function MonthlySummaryPage() {
   const { person, loading, signIn, switchUser } = useIdentity();
@@ -105,14 +105,14 @@ export default function MonthlySummaryPage() {
                       {MONTH_NAMES.map((_, m) => {
                         const future = m > TODAY_MONTH;
                         const rows = monthRowsMap.get(m) || [];
-                        const val = future || rows.length === 0 ? null : row.compute(rows);
+                        const val = future || rows.length === 0 ? null : computeOverPeriod(row, rows);
                         return (
                           <td key={m} className={m === TODAY_MONTH ? "mo-current" : ""}>
                             {fmtCell(val, row.fmt)}
                           </td>
                         );
                       })}
-                      <td className="ytd">{fmtCell(ytdRows.length === 0 ? null : row.compute(ytdRows), row.fmt)}</td>
+                      <td className="ytd">{fmtCell(ytdRows.length === 0 ? null : computeOverPeriod(row, ytdRows), row.fmt)}</td>
                     </tr>
                   ))}
                 </>
