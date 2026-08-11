@@ -124,6 +124,9 @@ export default function CeoDashboardPage() {
             <Link href="/weekly-ops">Weekly Ops</Link>
             <Link href="/monthly-summary">Monthly Summary</Link>
           </div>
+          <Link href="/kpi-intake-admin" className="settings-link">
+            📋 Interviews
+          </Link>
           <Link href="/lists-admin" className="settings-link">
             ⚙️ Settings
           </Link>
