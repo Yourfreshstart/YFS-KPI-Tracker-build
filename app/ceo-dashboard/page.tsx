@@ -119,6 +119,11 @@ export default function CeoDashboardPage() {
           </div>
         </div>
         <div className="topbar-right">
+          <div className="page-links">
+            <Link href="/daily-entry">Daily Entry</Link>
+            <Link href="/weekly-ops">Weekly Ops</Link>
+            <Link href="/monthly-summary">Monthly Summary</Link>
+          </div>
           <Link href="/lists-admin" className="settings-link">
             ⚙️ Settings
           </Link>
@@ -298,6 +303,22 @@ export default function CeoDashboardPage() {
           display: flex;
           align-items: center;
           gap: 10px;
+        }
+        .page-links {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding-right: 14px;
+          border-right: 1px solid var(--line);
+        }
+        .page-links :global(a) {
+          font-size: 12.5px;
+          font-weight: 600;
+          color: var(--ink-muted);
+          text-decoration: none;
+        }
+        .page-links :global(a:hover) {
+          color: var(--ink);
         }
         .settings-link {
           font-size: 12.5px;
