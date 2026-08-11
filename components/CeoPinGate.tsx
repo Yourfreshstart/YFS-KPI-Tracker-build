@@ -1,17 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Logo from "@/components/Logo";
+import PinPad from "@/components/PinPad";
 
 export default function CeoPinGate({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  async function handleChange(value: string) {
-    const digits = value.replace(/\D/g, "").slice(0, 4);
+  async function handleChange(digits: string) {
     setPin(digits);
     setError("");
     if (digits.length === 4) {
@@ -24,7 +23,6 @@ export default function CeoPinGate({ onUnlock }: { onUnlock: () => void }) {
       if (rpcError || !data || data.length === 0) {
         setError("Incorrect PIN, try again");
         setPin("");
-        inputRef.current?.focus();
         return;
       }
       onUnlock();
@@ -32,7 +30,7 @@ export default function CeoPinGate({ onUnlock }: { onUnlock: () => void }) {
   }
 
   return (
-    <div className="gate" onClick={() => inputRef.current?.focus()}>
+    <div className="gate">
       <div className="gate-card">
         <Logo height={48} />
         <h2>CEO Dashboard</h2>
@@ -42,17 +40,7 @@ export default function CeoPinGate({ onUnlock }: { onUnlock: () => void }) {
             <span key={i} className={i < pin.length ? "filled" : ""} />
           ))}
         </div>
-        <input
-          ref={inputRef}
-          type="tel"
-          inputMode="numeric"
-          maxLength={4}
-          className="pin-input"
-          autoComplete="off"
-          value={pin}
-          disabled={checking}
-          onChange={(e) => handleChange(e.target.value)}
-        />
+        <PinPad value={pin} onChange={handleChange} disabled={checking} />
         <div className="pin-error">{error}</div>
       </div>
 
@@ -105,13 +93,6 @@ export default function CeoPinGate({ onUnlock }: { onUnlock: () => void }) {
         .pin-dots span.filled {
           background: var(--accent);
           border-color: var(--accent);
-        }
-        .pin-input {
-          position: absolute;
-          opacity: 0;
-          width: 1px;
-          height: 1px;
-          pointer-events: none;
         }
         .pin-error {
           font-size: 12.5px;

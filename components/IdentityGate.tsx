@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Person } from "@/lib/useIdentity";
+import PinPad from "@/components/PinPad";
 
 const NAMES = ["Teather", "Jan", "Jennifer"];
 
@@ -15,17 +16,14 @@ export default function IdentityGate({
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   function choosePerson(name: string) {
     setSelected(name);
     setPin("");
     setError("");
-    setTimeout(() => inputRef.current?.focus(), 0);
   }
 
-  async function handlePinChange(value: string) {
-    const digits = value.replace(/\D/g, "").slice(0, 4);
+  async function handlePinChange(digits: string) {
     setPin(digits);
     setError("");
     if (digits.length === 4 && selected) {
@@ -38,7 +36,6 @@ export default function IdentityGate({
       if (rpcError || !data || data.length === 0) {
         setError("Incorrect PIN, try again");
         setPin("");
-        inputRef.current?.focus();
         return;
       }
       onVerified(data[0] as Person);
@@ -69,17 +66,7 @@ export default function IdentityGate({
                 <span key={i} className={i < pin.length ? "filled" : ""} />
               ))}
             </div>
-            <input
-              ref={inputRef}
-              type="tel"
-              inputMode="numeric"
-              maxLength={4}
-              className="pin-input"
-              autoComplete="off"
-              value={pin}
-              disabled={checking}
-              onChange={(e) => handlePinChange(e.target.value)}
-            />
+            <PinPad value={pin} onChange={handlePinChange} disabled={checking} />
             <div className="pin-error">{error}</div>
             <button className="pin-back" onClick={() => setSelected(null)}>
               &lsaquo; Not you? Choose again
@@ -154,13 +141,6 @@ export default function IdentityGate({
         .pin-dots span.filled {
           background: var(--accent);
           border-color: var(--accent);
-        }
-        .pin-input {
-          position: absolute;
-          opacity: 0;
-          width: 1px;
-          height: 1px;
-          pointer-events: none;
         }
         .pin-error {
           font-size: 12.5px;
