@@ -386,13 +386,21 @@ function downloadWorkbook(){
   const fl=[['Technician','Type','Detail']];
   names.forEach(t=>res[t].flags.forEach(f=>fl.push([t,(FLAGLABEL[f[0]]||f[0]),f[1]])));
   ws('Review Flags',fl);
-  // per tech
+  // per tech -- column order (A Day, B Date, C Client, D Price, E Ticket Hrs,
+  // F ZM Hrs, G Break Time, H Rate, I %, J Commission, K Tips) matches our
+  // real per-tech sheets so the job rows can be copy/pasted straight in.
+  const WEEKDAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const dayLabel=ds=>{const [m,d,y]=ds.split('/').map(Number);return WEEKDAY_NAMES[new Date(y,m-1,d).getDay()]+':';};
   names.forEach(t=>{const r=res[t];
-    const a=[[t,'','','','Week',wkA+'–'+wkB],[],
-      ['Date','Client','Price','Ticket Hrs','ZM Hrs','Break','Rate','%','Commission','Tips']];
-    r.rows.forEach(j=>a.push([j.date,(j.company||j.customer),j.base_price,j.ticket,j.actual,'',(j.ticket?j.commission/j.ticket:''),r.trainee?0:r.rate,j.commission,j.tip||'']));
+    const a=[[t,'','','','','Week',wkA+'–'+wkB],[],
+      ['','Date:','Client:','Price:','Tick Hrs:','ZM Hrs*','Break Time*','Rate','%','Commission','Tips']];
+    let lastDate=null;
+    r.rows.forEach(j=>{
+      const showDate=j.date!==lastDate; lastDate=j.date;
+      a.push([showDate?dayLabel(j.date):'', showDate?j.date:'', (j.company||j.customer), j.base_price, j.ticket, j.actual, '', (j.ticket?j.commission/j.ticket:''), r.trainee?0:r.rate, j.commission, j.tip||'']);
+    });
     const first=4,last=3+r.rows.length;
-    a.push(['','TOTALS','',{f:`SUM(D${first}:D${last})`},'','','','',{f:`SUM(I${first}:I${last})`},{f:`SUM(J${first}:J${last})`}]);
+    a.push(['','','TOTALS','',{f:`SUM(E${first}:E${last})`},'','','','',{f:`SUM(J${first}:J${last})`},{f:`SUM(K${first}:K${last})`}]);
     a.push([]);
     const cr=last+3;                                     // 'PAY SUMMARY' row
     a.push(['PAY SUMMARY']);
