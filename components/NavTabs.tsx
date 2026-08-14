@@ -7,6 +7,7 @@ const TABS = [
   { href: "/daily-entry", label: "Daily Entry" },
   { href: "/weekly-ops", label: "Weekly Ops" },
   { href: "/monthly-summary", label: "Monthly Summary" },
+  { href: "/payroll", label: "Payroll" },
 ];
 
 export default function NavTabs() {
