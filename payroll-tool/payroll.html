@@ -473,7 +473,7 @@ function downloadWorkbook(){
     });
     const first=4,last=3+r.rows.length;
     const totalsRow=last+1;
-    a.push(['','','TOTALS','',{f:`SUM(E${first}:E${last})`},{f:`SUM(F${first}:F${last})`},'','','',{f:`SUM(J${first}:J${last})`},{f:`SUM(K${first}:K${last})`}]);
+    a.push(['','','TOTALS',{f:`SUM(D${first}:D${last})`},{f:`SUM(E${first}:E${last})`},{f:`SUM(F${first}:F${last})`},'','','',{f:`SUM(J${first}:J${last})`},{f:`SUM(K${first}:K${last})`}]);
     a.push([]);
 
     // PAY SUMMARY -- row numbers tracked explicitly so the formulas below
