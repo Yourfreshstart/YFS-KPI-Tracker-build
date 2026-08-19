@@ -191,6 +191,15 @@ function run(apptText, assnText, roster){
       tip:tip_by[k]||0, commercial:!!company, k
     });
   }
+  // Cross-tech lookup: for every completed job, how many hours did each
+  // cleaner actually clock (ZM Hrs)? Needed so a shared job's commission
+  // can be split by hours worked instead of split evenly.
+  const jobHours={};
+  Object.keys(techs).forEach(t=>{
+    techs[t].forEach(j=>{
+      if(j.status==='Completed'){ (jobHours[j.k]=jobHours[j.k]||{})[t]=j.actual; }
+    });
+  });
   const wd=d=>{const [m,dd,y]=d.split('/').map(Number); return new Date(y,m-1,dd).getTime();};
   function compute(tech, jobs){
     jobs=jobs.slice().sort((a,b)=> wd(a.date)-wd(b.date) || ((ptimeMin(a.clock_in)||0)-(ptimeMin(b.clock_in)||0)));
@@ -215,7 +224,26 @@ function run(apptText, assnText, roster){
       if(tier===1&&j.ticket){const cv=CAP*j.ticket; if(comm>cv){comm=cv; flags.push(['TIER1_CAP',`${j.date} ${j.customer.slice(0,20)} capped ${r2(gross)}->${r2(cv)}`]);}}
       let factor;
       if(trainee){factor=0; flags.push(['TRAINEE_HOURLY',`${j.date} ${j.customer.slice(0,20)} — trainee (hourly), commission to trainer`]);}
-      else if(j.co.length>1){ if(j.nont.length===1){factor=1; flags.push(['TRAINER_FULL',`${j.date} ${j.customer.slice(0,20)} — trainer takes full commission`]);} else {factor=Math.round(1/j.nont.length*1e4)/1e4; flags.push(['AMBIG_SHARE',`${j.date} ${j.customer.slice(0,20)} — ${j.nont.length} non-trainees on one house; confirm who is paid`]);} }
+      else if(j.co.length>1){
+        if(j.nont.length===1){factor=1; flags.push(['TRAINER_FULL',`${j.date} ${j.customer.slice(0,20)} — trainer takes full commission`]);}
+        else {
+          // Split by actual hours clocked, not evenly -- someone who
+          // worked 5 hours on a house earns more of it than someone
+          // who worked 3.5. Falls back to an even split (flagged) if
+          // any of this job's cleaners is missing clock hours.
+          const hrs=jobHours[j.k]||{};
+          const myHrs=hrs[tech];
+          const coHrs=j.nont.map(n=>hrs[n]);
+          const total=coHrs.reduce((s,h)=>s+(h||0),0);
+          if(myHrs!=null && coHrs.every(h=>h!=null) && total>0){
+            factor=myHrs/total;
+            flags.push(['HOURS_SPLIT',`${j.date} ${j.customer.slice(0,20)} — ${j.nont.length} techs, split by hours: ${myHrs}h of ${total}h (${r2(factor*100)}%)`]);
+          } else {
+            factor=Math.round(1/j.nont.length*1e4)/1e4;
+            flags.push(['AMBIG_SHARE',`${j.date} ${j.customer.slice(0,20)} — ${j.nont.length} non-trainees, missing clock hours; split evenly, confirm`]);
+          }
+        }
+      }
       else factor=1;
       j.factor=factor;
       const share=comm*factor; commission+=share; j.commission=r2(share); j.rate=rate;
@@ -316,8 +344,8 @@ $('#fileB').onchange=e=>handleFile(e.target,'B');
 });
 
 const money=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info'};
-const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)'};
+const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',HOURS_SPLIT:'info'};
+const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',HOURS_SPLIT:'Split by hours'};
 
 $('#genBtn').onclick=()=>{
   const rmap={};S.techList.forEach(n=>{if(S.roster[n]&&S.roster[n].status==='trainee')rmap[n]=true;});
@@ -327,7 +355,9 @@ $('#genBtn').onclick=()=>{
 };
 
 function render(){
-  const res=S.results,names=Object.keys(res).sort();
+  const res=S.results,allNames=Object.keys(res).sort();
+  const names=allNames.filter(t=>!res[t].trainee);
+  const traineeNames=allNames.filter(t=>res[t].trainee);
   let tComm=0,tTip=0,tFuel=0,tFlags=0,tGross=0;
   names.forEach(t=>{const r=res[t];tComm+=r.commission;tTip+=r.tips;tFuel+=r.fuel;tFlags+=r.flags.length;tGross+=r.commission+r.tips+r.fuel;});
   let html=`<div class="card"><h2>Summary</h2>
@@ -339,17 +369,19 @@ function render(){
       <div class="tile"><div class="v">${tFlags}</div><div class="k">Review flags</div></div>
     </div>
     <table><thead><tr><th>Technician</th><th class="num">Jobs</th><th class="num">Ticket hrs</th><th class="num">Tier</th><th class="num">Commission</th><th class="num">Tips</th><th class="num">Fuel</th><th class="num">Calc pay</th><th class="num">Flags</th></tr></thead><tbody>`;
-  names.forEach(t=>{const r=res[t];const tr=r.trainee;
-    html+=`<tr><td>${t} ${tr?'<span class="badge-tr">trainee</span>':''}</td><td class="num">${r.rows.length}</td><td class="num">${r.total_ticket}</td><td class="num">${tr?'—':r.tier}</td><td class="num">${money(r.commission)}</td><td class="num">${money(r.tips)}</td><td class="num">${money(r.fuel)}</td><td class="num">${money(r.commission+r.tips+r.fuel)}</td><td class="num">${r.flags.length}</td></tr>`;});
+  names.forEach(t=>{const r=res[t];
+    html+=`<tr><td>${t}</td><td class="num">${r.rows.length}</td><td class="num">${r.total_ticket}</td><td class="num">${r.tier}</td><td class="num">${money(r.commission)}</td><td class="num">${money(r.tips)}</td><td class="num">${money(r.fuel)}</td><td class="num">${money(r.commission+r.tips+r.fuel)}</td><td class="num">${r.flags.length}</td></tr>`;});
   html+=`<tr class="tot"><td>TOTAL</td><td></td><td></td><td></td><td class="num">${money(tComm)}</td><td class="num">${money(tTip)}</td><td class="num">${money(tFuel)}</td><td class="num">${money(tGross)}</td><td></td></tr>`;
   html+=`</tbody></table>
     <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="go" style="width:auto" id="dlBtn">⬇ Download Excel workbook</button>
-      <span class="muted" style="font-size:12.5px;align-self:center">Adds Summary, Review Flags, a tab per technician, and the commercial workers'-comp log.</span></div></div>`;
+      <span class="muted" style="font-size:12.5px;align-self:center">Adds Summary, Review Flags, a tab per technician, and the commercial workers'-comp log.</span></div>`;
+  if(traineeNames.length)html+=`<div class="muted" style="font-size:12.5px;margin-top:10px">Trainees this week (paid hourly via Square, not included above): ${traineeNames.join(', ')}.</div>`;
+  html+=`</div>`;
 
   // flags
   const allFlags=[];names.forEach(t=>res[t].flags.forEach(f=>allFlags.push([t,f[0],f[1]])));
-  const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3};
+  const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3,HOURS_SPLIT:3};
   allFlags.sort((a,b)=>(order[a[1]]??9)-(order[b[1]]??9));
   html+=`<div class="card"><h2>Review flags · ${allFlags.length}</h2><div class="muted" style="font-size:13px;margin-bottom:10px">Red = check before paying · yellow = decide · blue = informational.</div>`;
   allFlags.forEach(([t,typ,msg])=>{const cls=FLAGCLASS[typ]||'info';
@@ -370,7 +402,11 @@ function render(){
 
 /* ---------- Excel workbook (SheetJS) ---------- */
 function downloadWorkbook(){
-  const res=S.results,names=Object.keys(res).sort();
+  const res=S.results,allNames=Object.keys(res).sort();
+  // Trainees are paid straight hourly out of Square, not from here -- no
+  // paysheet, no Summary row. They still appear in the Commercial Log
+  // below, since that's a workers'-comp presence record, not pay.
+  const names=allNames.filter(t=>!res[t].trainee);
   const wb=XLSX.utils.book_new();
   const ws=(name,aoa)=>{const s=XLSX.utils.aoa_to_sheet(aoa);XLSX.utils.book_append_sheet(wb,s,name.slice(0,31));return s;};
   const wkA=fmtDate(S.weekStart),wkB=fmtDate(S.weekEnd)+'/'+S.weekEnd.getFullYear();
@@ -379,7 +415,7 @@ function downloadWorkbook(){
     ['Technician','Jobs','Ticket Hrs','Tier','Commission','Tips','Fuel','Calc Pay','Flags']];
   let tC=0,tT=0,tF=0,tG=0;
   names.forEach(t=>{const r=res[t];tC+=r.commission;tT+=r.tips;tF+=r.fuel;tG+=r.commission+r.tips+r.fuel;
-    sum.push([t,r.rows.length,r.total_ticket,r.trainee?'trainee':r.tier,r.commission,r.tips,r.fuel,r.commission+r.tips+r.fuel,r.flags.length]);});
+    sum.push([t,r.rows.length,r.total_ticket,r.tier,r.commission,r.tips,r.fuel,r.commission+r.tips+r.fuel,r.flags.length]);});
   sum.push(['TOTAL','','','',tC,tT,tF,tG,'']);
   ws('Summary',sum);
   // Review Flags
@@ -417,9 +453,10 @@ function downloadWorkbook(){
     if(r.trainee)a.push(['(Trainee — enter hourly pay from time clock; commission goes to the trainer)']);
     ws(t,a);
   });
-  // Commercial log
+  // Commercial log -- everyone who was on site, trainees included (this is
+  // a workers'-comp presence record, not a pay record).
   const cm=[['Commercial jobs — workers comp log',wkA+'–'+wkB],[],['Technician','Date','Client / Company','Price','Ticket Hrs','Actual Hrs']];
-  names.forEach(t=>res[t].commercial.forEach(j=>cm.push([t,j.date,(j.company||j.customer),j.price,j.ticket,j.actual])));
+  allNames.forEach(t=>res[t].commercial.forEach(j=>cm.push([t,j.date,(j.company||j.customer),j.price,j.ticket,j.actual])));
   ws('Commercial Log',cm);
   XLSX.writeFile(wb,`Fresh_Start_Payroll_${wkA.replace('/','')}-${fmtDate(S.weekEnd).replace('/','')}.xlsx`);
 }
