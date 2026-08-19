@@ -220,6 +220,25 @@ function run(apptText, assnText, roster){
     const total_ticket=r2(completed.reduce((s,j)=>s+(j.credited||0),0));
     const [tier,rate]=tierFor(total_ticket);
     const flags=[];
+    // Trainer pay: $20 per day per trainee trained, not per job -- the same
+    // trainee across two jobs the same day is still one day of training.
+    const trainerDayTrainees={};
+    if(!trainee) for(const j of completed){
+      if(j.co.length>1 && j.nont.length===1){
+        const traineesHere=j.co.filter(c=>isTrainee(c));
+        if(traineesHere.length){
+          (trainerDayTrainees[j.date]=trainerDayTrainees[j.date]||new Set());
+          traineesHere.forEach(n=>trainerDayTrainees[j.date].add(n));
+        }
+      }
+    }
+    let trainerPay=0;
+    Object.keys(trainerDayTrainees).forEach(date=>{
+      const names=[...trainerDayTrainees[date]];
+      trainerPay+=20*names.length;
+      flags.push(['TRAINER_PAY',`${date} — trained ${names.join(', ')} (${names.length} trainee${names.length>1?'s':''}), +$${20*names.length}`]);
+    });
+    trainerPay=r2(trainerPay);
     const seen={}; completed.forEach(j=>{const kk=key(j.date,j.addr,j.price); seen[kk]=(seen[kk]||0)+1;});
     Object.keys(seen).forEach(kk=>{if(seen[kk]>1)flags.push(['DUPLICATE',kk+' x'+seen[kk]]);});
     let commission=0; const rows=[];
@@ -269,7 +288,7 @@ function run(apptText, assnText, roster){
     }
     fuel=r2(fuel);
     cancelled.forEach(j=>flags.push(['CANCELLED',`${j.date} ${j.customer.slice(0,24)} — cancelled, excluded`]));
-    return {tech, rows, cancelled, total_ticket, tier, rate, commission:r2(commission), tips, fuel,
+    return {tech, rows, cancelled, total_ticket, tier, rate, commission:r2(commission), tips, fuel, trainerPay,
             n_resid:resid.length, commercial:completed.filter(j=>j.commercial), flags, trainee};
   }
   const results={};
@@ -354,8 +373,8 @@ $('#fileB').onchange=e=>handleFile(e.target,'B');
 });
 
 const money=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',HOURS_SPLIT:'info',LANCASTER_FUEL:'info'};
-const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',HOURS_SPLIT:'Split by hours',LANCASTER_FUEL:'Lancaster $10 fuel'};
+const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',HOURS_SPLIT:'info',LANCASTER_FUEL:'info',TRAINER_PAY:'info'};
+const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',HOURS_SPLIT:'Split by hours',LANCASTER_FUEL:'Lancaster $10 fuel',TRAINER_PAY:'Trainer pay'};
 
 $('#genBtn').onclick=()=>{
   const rmap={};S.techList.forEach(n=>{if(S.roster[n]&&S.roster[n].status==='trainee')rmap[n]=true;});
@@ -368,20 +387,21 @@ function render(){
   const res=S.results,allNames=Object.keys(res).sort();
   const names=allNames.filter(t=>!res[t].trainee);
   const traineeNames=allNames.filter(t=>res[t].trainee);
-  let tComm=0,tTip=0,tFuel=0,tFlags=0,tGross=0;
-  names.forEach(t=>{const r=res[t];tComm+=r.commission;tTip+=r.tips;tFuel+=r.fuel;tFlags+=r.flags.length;tGross+=r.commission+r.tips+r.fuel;});
+  let tComm=0,tTip=0,tFuel=0,tTrain=0,tFlags=0,tGross=0;
+  names.forEach(t=>{const r=res[t];tComm+=r.commission;tTip+=r.tips;tFuel+=r.fuel;tTrain+=r.trainerPay;tFlags+=r.flags.length;tGross+=r.commission+r.tips+r.fuel+r.trainerPay;});
   let html=`<div class="card"><h2>Summary</h2>
     <div class="tiles">
-      <div class="tile"><div class="v">${money(tGross)}</div><div class="k">Calculated pay (comm + fuel + tips)</div></div>
+      <div class="tile"><div class="v">${money(tGross)}</div><div class="k">Calculated pay (comm + fuel + tips + trainer)</div></div>
       <div class="tile"><div class="v">${money(tComm)}</div><div class="k">Commission</div></div>
       <div class="tile"><div class="v">${money(tFuel)}</div><div class="k">Fuel</div></div>
+      <div class="tile"><div class="v">${money(tTrain)}</div><div class="k">Trainer pay</div></div>
       <div class="tile"><div class="v">${names.length}</div><div class="k">Technicians</div></div>
       <div class="tile"><div class="v">${tFlags}</div><div class="k">Review flags</div></div>
     </div>
-    <table><thead><tr><th>Technician</th><th class="num">Jobs</th><th class="num">Ticket hrs</th><th class="num">Tier</th><th class="num">Commission</th><th class="num">Tips</th><th class="num">Fuel</th><th class="num">Calc pay</th><th class="num">Flags</th></tr></thead><tbody>`;
+    <table><thead><tr><th>Technician</th><th class="num">Jobs</th><th class="num">Ticket hrs</th><th class="num">Tier</th><th class="num">Commission</th><th class="num">Tips</th><th class="num">Fuel</th><th class="num">Trainer</th><th class="num">Calc pay</th><th class="num">Flags</th></tr></thead><tbody>`;
   names.forEach(t=>{const r=res[t];
-    html+=`<tr><td>${t}</td><td class="num">${r.rows.length}</td><td class="num">${r.total_ticket}</td><td class="num">${r.tier}</td><td class="num">${money(r.commission)}</td><td class="num">${money(r.tips)}</td><td class="num">${money(r.fuel)}</td><td class="num">${money(r.commission+r.tips+r.fuel)}</td><td class="num">${r.flags.length}</td></tr>`;});
-  html+=`<tr class="tot"><td>TOTAL</td><td></td><td></td><td></td><td class="num">${money(tComm)}</td><td class="num">${money(tTip)}</td><td class="num">${money(tFuel)}</td><td class="num">${money(tGross)}</td><td></td></tr>`;
+    html+=`<tr><td>${t}</td><td class="num">${r.rows.length}</td><td class="num">${r.total_ticket}</td><td class="num">${r.tier}</td><td class="num">${money(r.commission)}</td><td class="num">${money(r.tips)}</td><td class="num">${money(r.fuel)}</td><td class="num">${money(r.trainerPay)}</td><td class="num">${money(r.commission+r.tips+r.fuel+r.trainerPay)}</td><td class="num">${r.flags.length}</td></tr>`;});
+  html+=`<tr class="tot"><td>TOTAL</td><td></td><td></td><td></td><td class="num">${money(tComm)}</td><td class="num">${money(tTip)}</td><td class="num">${money(tFuel)}</td><td class="num">${money(tTrain)}</td><td class="num">${money(tGross)}</td><td></td></tr>`;
   html+=`</tbody></table>
     <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="go" style="width:auto" id="dlBtn">⬇ Download Excel workbook</button>
@@ -391,7 +411,7 @@ function render(){
 
   // flags
   const allFlags=[];names.forEach(t=>res[t].flags.forEach(f=>allFlags.push([t,f[0],f[1]])));
-  const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3,HOURS_SPLIT:3,LANCASTER_FUEL:3};
+  const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3,HOURS_SPLIT:3,LANCASTER_FUEL:3,TRAINER_PAY:3};
   allFlags.sort((a,b)=>(order[a[1]]??9)-(order[b[1]]??9));
   html+=`<div class="card"><h2>Review flags · ${allFlags.length}</h2><div class="muted" style="font-size:13px;margin-bottom:10px">Red = check before paying · yellow = decide · blue = informational.</div>`;
   allFlags.forEach(([t,typ,msg])=>{const cls=FLAGCLASS[typ]||'info';
@@ -426,14 +446,14 @@ function downloadWorkbook(){
   const wkA=fmtDate(S.weekStart),wkB=fmtDate(S.weekEnd)+'/'+S.weekEnd.getFullYear();
   // Summary
   const sum=[['Your Fresh Start — Payroll Summary',' ','Week',wkA+'–'+wkB],[],
-    ['Technician','Jobs','Ticket Hrs','Tier','Commission','Tips','Fuel','Calc Pay','Flags']];
-  let tC=0,tT=0,tF=0,tG=0;
-  names.forEach(t=>{const r=res[t];tC+=r.commission;tT+=r.tips;tF+=r.fuel;tG+=r.commission+r.tips+r.fuel;
-    sum.push([t,r.rows.length,r.total_ticket,r.tier,r.commission,r.tips,r.fuel,r.commission+r.tips+r.fuel,r.flags.length]);});
-  sum.push(['TOTAL','','','',tC,tT,tF,tG,'']);
+    ['Technician','Jobs','Ticket Hrs','Tier','Commission','Tips','Fuel','Trainer Pay','Calc Pay','Flags']];
+  let tC=0,tT=0,tF=0,tTr=0,tG=0;
+  names.forEach(t=>{const r=res[t];tC+=r.commission;tT+=r.tips;tF+=r.fuel;tTr+=r.trainerPay;tG+=r.commission+r.tips+r.fuel+r.trainerPay;
+    sum.push([t,r.rows.length,r.total_ticket,r.tier,r.commission,r.tips,r.fuel,r.trainerPay,r.commission+r.tips+r.fuel+r.trainerPay,r.flags.length]);});
+  sum.push(['TOTAL','','','',tC,tT,tF,tTr,tG,'']);
   const sumWs=ws('Summary',sum);
   zCol(sumWs,'C',4,4+names.length,NUM2);
-  ['E','F','G','H'].forEach(col=>zCol(sumWs,col,4,4+names.length,CUR));
+  ['E','F','G','H','I'].forEach(col=>zCol(sumWs,col,4,4+names.length,CUR));
   // Review Flags
   const fl=[['Technician','Type','Detail']];
   names.forEach(t=>res[t].flags.forEach(f=>fl.push([t,(FLAGLABEL[f[0]]||f[0]),f[1]])));
@@ -466,6 +486,7 @@ function downloadWorkbook(){
     const rComm=++rn; a.push(['Commission','',r.commission]);
     const rFuel=++rn; a.push(['Fuel ($5/house, $10 in Lancaster = "Gas Reim")','',r.fuel]);
     const rTips=++rn; a.push(['Tips','',r.tips]);
+    const rTrainerFee=++rn; a.push(['Trainer Pay ($20/day/trainee)','',r.trainerPay]);
     const rTrain=++rn; a.push(['Training / Bonus Pay','',0]);      // you fill
     const rMeet=++rn; a.push(['Meeting / Other Pay','',0]);        // you fill
     const rDed=++rn; a.push(['Deductions','',0]);                  // you fill
@@ -478,7 +499,7 @@ function downloadWorkbook(){
     ['E','F','G'].forEach(col=>zCol(techWs,col,first,totalsRow,NUM2));
     zCol(techWs,'I',first,last,PCT);
     [rTicketHrs,rHours].forEach(row=>zCell(techWs,'C'+row,NUM2));
-    [rComm,rFuel,rTips,rTrain,rMeet,rDed,rGross,rAvg].forEach(row=>zCell(techWs,'C'+row,CUR));
+    [rComm,rFuel,rTips,rTrainerFee,rTrain,rMeet,rDed,rGross,rAvg].forEach(row=>zCell(techWs,'C'+row,CUR));
   });
   // Commercial log -- everyone who was on site, trainees included (this is
   // a workers'-comp presence record, not a pay record).
