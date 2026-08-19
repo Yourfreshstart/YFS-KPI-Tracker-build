@@ -178,11 +178,12 @@ function run(apptText, assnText, roster){
     const tech=String(r['Cleaner Name']||'').trim(); if(!tech)continue;
     const date=String(r['Appointment Date']||'').trim();
     const addr=String(r['Address Line1']||'').trim();
+    const city=String(r['Address City']||'').trim();
     const price=fnum(r['Appointment Price']);
     const company=String(r['Customer Company Name']||'').trim();
     const k=key(date,addr,price);
     (techs[tech]=techs[tech]||[]).push({
-      date, customer:(String(r['Customer Full Name']||'').trim()||company), company, addr, price,
+      date, customer:(String(r['Customer Full Name']||'').trim()||company), company, addr, city, price,
       ticket:dur(r['Appointment Start Time'],r['Appointment End Time']),
       actual:secH(r['Total Time in Seconds']),
       status:String(r['Appointment Status']||'').trim(),
@@ -191,6 +192,11 @@ function run(apptText, assnText, roster){
       tip:tip_by[k]||0, commercial:!!company, k
     });
   }
+  // Lancaster, OH jobs get a $10 fuel stipend instead of the usual $5 --
+  // matched against Address City first (ZenMaid's real export column),
+  // falling back to the street address text in case a job's city field
+  // is ever blank.
+  const isLancaster=j=>/lancaster/i.test(j.city)||/lancaster/i.test(j.addr);
   // Cross-tech lookup: for every completed job, how many hours did each
   // cleaner actually clock (ZM Hrs)? Needed so a shared job's commission
   // can be split by hours worked instead of split evenly.
@@ -256,7 +262,11 @@ function run(apptText, assnText, roster){
     const tips=r2(completed.reduce((s,j)=>s+(j.tip||0),0));
     const resid=completed.filter(j=>!j.commercial);
     let fuel=0;
-    if(!trainee) for(const j of resid){ if(j.co.length===1||j.nont.length===1)fuel+=5; else if(j.nont.length>1)fuel+=r2(5/j.nont.length); }
+    if(!trainee) for(const j of resid){
+      const stipend=isLancaster(j)?10:5;
+      if(stipend===10)flags.push(['LANCASTER_FUEL',`${j.date} ${j.customer.slice(0,20)} — Lancaster, $10 fuel stipend`]);
+      if(j.co.length===1||j.nont.length===1)fuel+=stipend; else if(j.nont.length>1)fuel+=r2(stipend/j.nont.length);
+    }
     fuel=r2(fuel);
     cancelled.forEach(j=>flags.push(['CANCELLED',`${j.date} ${j.customer.slice(0,24)} — cancelled, excluded`]));
     return {tech, rows, cancelled, total_ticket, tier, rate, commission:r2(commission), tips, fuel,
@@ -344,8 +354,8 @@ $('#fileB').onchange=e=>handleFile(e.target,'B');
 });
 
 const money=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',HOURS_SPLIT:'info'};
-const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',HOURS_SPLIT:'Split by hours'};
+const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',HOURS_SPLIT:'info',LANCASTER_FUEL:'info'};
+const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',HOURS_SPLIT:'Split by hours',LANCASTER_FUEL:'Lancaster $10 fuel'};
 
 $('#genBtn').onclick=()=>{
   const rmap={};S.techList.forEach(n=>{if(S.roster[n]&&S.roster[n].status==='trainee')rmap[n]=true;});
@@ -381,7 +391,7 @@ function render(){
 
   // flags
   const allFlags=[];names.forEach(t=>res[t].flags.forEach(f=>allFlags.push([t,f[0],f[1]])));
-  const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3,HOURS_SPLIT:3};
+  const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3,HOURS_SPLIT:3,LANCASTER_FUEL:3};
   allFlags.sort((a,b)=>(order[a[1]]??9)-(order[b[1]]??9));
   html+=`<div class="card"><h2>Review flags · ${allFlags.length}</h2><div class="muted" style="font-size:13px;margin-bottom:10px">Red = check before paying · yellow = decide · blue = informational.</div>`;
   allFlags.forEach(([t,typ,msg])=>{const cls=FLAGCLASS[typ]||'info';
