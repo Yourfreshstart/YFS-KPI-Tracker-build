@@ -422,7 +422,7 @@ function render(){
   html+=`<div class="card"><h2>By technician</h2>`;
   names.forEach(t=>{const r=res[t];
     html+=`<details class="tech"><summary>${t} ${r.trainee?'<span class="badge-tr">trainee · hourly</span>':''}<span class="muted" style="margin-left:auto;font-weight:400">${r.total_ticket} hrs · ${r.trainee?'hourly':'Tier '+r.tier+' · '+money(r.commission)}</span></summary><div class="body"><table><thead><tr><th>Date</th><th>Client</th><th class="num">Price</th><th class="num">Tkt</th><th class="num">Actual</th><th class="num">%</th><th class="num">Commission</th><th class="num">Tips</th></tr></thead><tbody>`;
-    r.rows.forEach(j=>{html+=`<tr><td>${j.date}</td><td>${(j.company||j.customer)} ${j.commercial?'<span class="muted">·comm</span>':''}</td><td class="num">${money(j.base_price)}</td><td class="num">${j.ticket??''}</td><td class="num">${j.actual??''}</td><td class="num">${Math.round(j.rate*100)}%</td><td class="num">${money(j.commission)}</td><td class="num">${j.tip?money(j.tip):''}</td></tr>`;});
+    r.rows.forEach(j=>{const yourShare=j.base_price*j.factor;html+=`<tr><td>${j.date}</td><td>${(j.company||j.customer)} ${j.commercial?'<span class="muted">·comm</span>':''}</td><td class="num">${money(yourShare)}</td><td class="num">${j.ticket??''}</td><td class="num">${j.actual??''}</td><td class="num">${Math.round(j.rate*100)}%</td><td class="num">${money(j.commission)}</td><td class="num">${j.tip?money(j.tip):''}</td></tr>`;});
     html+=`<tr class="tot"><td colspan="6">Commission + Fuel ${money(r.fuel)} + Tips ${money(r.tips)}</td><td class="num">${money(r.commission)}</td><td class="num">${money(r.tips)}</td></tr></tbody></table></div></details>`;});
   html+=`</div>`;
 
@@ -469,7 +469,8 @@ function downloadWorkbook(){
     let lastDate=null;
     r.rows.forEach(j=>{
       const showDate=j.date!==lastDate; lastDate=j.date;
-      a.push([showDate?dayLabel(j.date):'', showDate?j.date:'', (j.company||j.customer), j.base_price, j.ticket, j.actual, '', (j.ticket?j.commission/j.ticket:''), r.rate, j.commission, j.tip||'']);
+      const yourShare=Math.round(j.base_price*j.factor*100)/100; // this tech's cut of the price on a shared job -- so Price x % actually lines up with Commission
+      a.push([showDate?dayLabel(j.date):'', showDate?j.date:'', (j.company||j.customer), yourShare, j.ticket, j.actual, '', (j.ticket?j.commission/j.ticket:''), r.rate, j.commission, j.tip||'']);
     });
     const first=4,last=3+r.rows.length;
     const totalsRow=last+1;
