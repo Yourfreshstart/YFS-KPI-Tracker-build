@@ -216,6 +216,12 @@ function run(apptText, assnText, roster){
       let cl=(house_cleaners[j.k]||[]).filter(Boolean); if(!cl.length)cl=[tech];
       if(cl.indexOf(tech)<0)cl=cl.concat([tech]);
       j.co=cl; j.nont=cl.filter(c=>!isTrainee(c)); j.credited=j.ticket||0;
+      // Tips split evenly among the paid (non-trainee) techs on the job --
+      // was previously crediting the FULL tip to every co-worker on a
+      // shared job (double/triple-counting it), fixed 2026-08-25. Same
+      // denominator as the fuel-stipend split (j.nont.length), not the
+      // full crew, since trainees aren't paid out of this tool at all.
+      j.tip=r2((j.tip||0)/(j.nont.length||1));
     }
     const total_ticket=r2(completed.reduce((s,j)=>s+(j.credited||0),0));
     const [tier,rate]=tierFor(total_ticket);
@@ -373,6 +379,15 @@ $('#fileB').onchange=e=>handleFile(e.target,'B');
 });
 
 const money=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+// Residential customers show as first-initial + last name only (e.g. "Mary
+// Jane Smith" -> "M. Smith", middle names dropped); commercial jobs keep
+// the full company name untouched. Used on-screen and in the Excel export.
+function custInitial(full){
+  full=(full||'').trim(); if(!full)return full;
+  const parts=full.split(/\s+/); if(parts.length<2)return full;
+  return parts[0][0].toUpperCase()+'. '+parts[parts.length-1];
+}
+const custDisplay=j=>j.company||custInitial(j.customer);
 const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',HOURS_SPLIT:'info',LANCASTER_FUEL:'info',TRAINER_PAY:'info'};
 const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',HOURS_SPLIT:'Split by hours',LANCASTER_FUEL:'Lancaster $10 fuel',TRAINER_PAY:'Trainer pay'};
 
@@ -422,7 +437,7 @@ function render(){
   html+=`<div class="card"><h2>By technician</h2>`;
   names.forEach(t=>{const r=res[t];
     html+=`<details class="tech"><summary>${t} ${r.trainee?'<span class="badge-tr">trainee · hourly</span>':''}<span class="muted" style="margin-left:auto;font-weight:400">${r.total_ticket} hrs · ${r.trainee?'hourly':'Tier '+r.tier+' · '+money(r.commission)}</span></summary><div class="body"><table><thead><tr><th>Date</th><th>Client</th><th class="num">Price</th><th class="num">Tkt</th><th class="num">Actual</th><th class="num">%</th><th class="num">Commission</th><th class="num">Tips</th></tr></thead><tbody>`;
-    r.rows.forEach(j=>{const yourShare=j.base_price*j.factor;html+=`<tr><td>${j.date}</td><td>${(j.company||j.customer)} ${j.commercial?'<span class="muted">·comm</span>':''}</td><td class="num">${money(yourShare)}</td><td class="num">${j.ticket??''}</td><td class="num">${j.actual??''}</td><td class="num">${Math.round(j.rate*100)}%</td><td class="num">${money(j.commission)}</td><td class="num">${j.tip?money(j.tip):''}</td></tr>`;});
+    r.rows.forEach(j=>{const yourShare=j.base_price*j.factor;html+=`<tr><td>${j.date}</td><td>${custDisplay(j)} ${j.commercial?'<span class="muted">·comm</span>':''}</td><td class="num">${money(yourShare)}</td><td class="num">${j.ticket??''}</td><td class="num">${j.actual??''}</td><td class="num">${Math.round(j.rate*100)}%</td><td class="num">${money(j.commission)}</td><td class="num">${j.tip?money(j.tip):''}</td></tr>`;});
     html+=`<tr class="tot"><td colspan="6">Commission + Fuel ${money(r.fuel)} + Tips ${money(r.tips)}</td><td class="num">${money(r.commission)}</td><td class="num">${money(r.tips)}</td></tr></tbody></table></div></details>`;});
   html+=`</div>`;
 
@@ -443,6 +458,21 @@ function nextFriday(d){
   while(nd.getDay()!==5)nd.setDate(nd.getDate()+1);
   return nd;
 }
+function fmtDateY(d){return (d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear();}
+function dateRangeList(start,end){
+  // Every calendar day from start to end inclusive, "M/D/YYYY" -- matches
+  // the raw date strings ZenMaid exports use, so it lines up with j.date.
+  const out=[]; let d=new Date(start.getFullYear(),start.getMonth(),start.getDate());
+  const endT=new Date(end.getFullYear(),end.getMonth(),end.getDate()).getTime();
+  while(d.getTime()<=endT){ out.push(fmtDateY(d)); d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1); }
+  return out;
+}
+// Excel's built-in "Narrow" print margins (inches) -- verified these
+// survive SheetJS's free writer; !pageSetup (fit-to-page scaling) does
+// NOT, so "fit on one page" still needs one manual click in Excel's own
+// Print Setup after opening the file.
+const NARROW_MARGINS={left:0.25,right:0.25,top:0.75,bottom:0.75,header:0.3,footer:0.3};
+
 function downloadWorkbook(){
   const res=S.results,allNames=Object.keys(res).sort();
   // Trainees are paid straight hourly out of Square, not from here -- no
@@ -450,10 +480,10 @@ function downloadWorkbook(){
   // below, since that's a workers'-comp presence record, not pay.
   const names=allNames.filter(t=>!res[t].trainee);
   const wb=XLSX.utils.book_new();
-  const ws=(name,aoa)=>{const s=XLSX.utils.aoa_to_sheet(aoa);XLSX.utils.book_append_sheet(wb,s,name.slice(0,31));return s;};
-  const wkA=fmtDate(S.weekStart),wkB=fmtDate(S.weekEnd)+'/'+S.weekEnd.getFullYear();
+  const ws=(name,aoa)=>{const s=XLSX.utils.aoa_to_sheet(aoa);s['!margins']=NARROW_MARGINS;XLSX.utils.book_append_sheet(wb,s,name.slice(0,31));return s;};
+  const wkA=fmtDateY(S.weekStart),wkB=fmtDateY(S.weekEnd);
   const payDate=nextFriday(S.weekEnd);
-  const payDateStr=fmtDate(payDate)+'/'+payDate.getFullYear();
+  const payDateStr=fmtDateY(payDate);
   // Summary
   const sum=[['Your Fresh Start — Payroll Summary',' ','Week',wkA+'–'+wkB,'Pay Date',payDateStr],[],
     ['Technician','Jobs','Ticket Hrs','Tier','Commission','Tips','Fuel','Trainer Pay','Calc Pay','Flags']];
@@ -462,40 +492,62 @@ function downloadWorkbook(){
     sum.push([t,r.rows.length,r.total_ticket,r.tier,r.commission,r.tips,r.fuel,r.trainerPay,r.commission+r.tips+r.fuel+r.trainerPay,r.flags.length]);});
   sum.push(['TOTAL','','','',tC,tT,tF,tTr,tG,'']);
   const sumWs=ws('Summary',sum);
+  sumWs['!cols']=[{wch:20},{wch:7},{wch:10},{wch:7},{wch:12},{wch:9},{wch:9},{wch:12},{wch:11},{wch:7}];
   zCol(sumWs,'C',4,4+names.length,NUM2);
   ['E','F','G','H','I'].forEach(col=>zCol(sumWs,col,4,4+names.length,CUR));
   // Review Flags
   const fl=[['Technician','Type','Detail']];
   names.forEach(t=>res[t].flags.forEach(f=>fl.push([t,(FLAGLABEL[f[0]]||f[0]),f[1]])));
-  ws('Review Flags',fl);
+  const flWs=ws('Review Flags',fl);
+  flWs['!cols']=[{wch:20},{wch:22},{wch:60}];
   // per tech -- column order (A Day, B Date, C Client, D Price, E Ticket Hrs,
   // F ZM Hrs, G Rate, H %, I Commission, J Tips) matches our real per-tech
   // sheets so the job rows can be copy/pasted straight in. (Break Time
   // column dropped 2026-08-25, not used.)
   const WEEKDAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const dayLabel=ds=>{const [m,d,y]=ds.split('/').map(Number);return WEEKDAY_NAMES[new Date(y,m-1,d).getDay()]+':';};
+  const allDates=dateRangeList(S.weekStart,S.weekEnd);
   const grossRefs=[]; // cross-sheet refs to each tech's GROSS PAY cell, for the Summary grand total below
   names.forEach(t=>{const r=res[t];
-    const a=[[t,'','','','','Week',wkA+'–'+wkB,'Pay Date',payDateStr],[],
+    // Row 1: tech name alone, merged across the full row so it's never cut
+    // off when printed. Row 2: full week (year on both ends) + pay date,
+    // stacked under the name instead of squeezed onto the same row.
+    const a=[[t],
+      ['Week:',wkA+'–'+wkB,'','','Pay Date:',payDateStr],
+      [],
       ['','Date:','Client:','Price:','Tick Hrs:','ZM Hrs*','Rate','%','Commission','Tips']];
-    let lastDate=null;
-    r.rows.forEach(j=>{
-      const showDate=j.date!==lastDate; lastDate=j.date;
-      const yourShare=Math.round(j.base_price*j.factor*100)/100; // this tech's cut of the price on a shared job -- so Price x % actually lines up with Commission
-      a.push([showDate?dayLabel(j.date):'', showDate?j.date:'', (j.company||j.customer), yourShare, j.ticket, j.actual, (j.ticket?j.commission/j.ticket:''), r.rate, j.commission, j.tip||'']);
+    const byDate={};
+    r.rows.forEach(j=>{(byDate[j.date]=byDate[j.date]||[]).push(j);});
+    let rowCount=0;
+    // Every day the pay period covers gets a row even with no work that
+    // day -- day/date shown, rest left blank (2026-08-25, per Teather).
+    allDates.forEach(ds=>{
+      const jobsForDay=byDate[ds];
+      if(jobsForDay&&jobsForDay.length){
+        jobsForDay.forEach((j,idx)=>{
+          const yourShare=Math.round(j.base_price*j.factor*100)/100; // this tech's cut of the price on a shared job -- so Price x % actually lines up with Commission
+          a.push([idx===0?dayLabel(ds):'', idx===0?ds:'', custDisplay(j), yourShare, j.ticket, j.actual, (j.ticket?j.commission/j.ticket:''), r.rate, j.commission, j.tip||'']);
+          rowCount++;
+        });
+      } else {
+        a.push([dayLabel(ds), ds, '', '', '', '', '', '', '', '']);
+        rowCount++;
+      }
     });
-    const first=4,last=3+r.rows.length;
+    const first=5,last=4+rowCount;
     const totalsRow=last+1;
-    a.push(['','','TOTALS',{f:`SUM(D${first}:D${last})`},{f:`SUM(E${first}:E${last})`},{f:`SUM(F${first}:F${last})`},'','',{f:`SUM(I${first}:I${last})`},{f:`SUM(J${first}:J${last})`}]);
+    // G (Rate $/hr) gets an AVERAGE across the week instead of staying
+    // blank, per Teather's request.
+    a.push(['','','TOTALS',{f:`SUM(D${first}:D${last})`},{f:`SUM(E${first}:E${last})`},{f:`SUM(F${first}:F${last})`},{f:`AVERAGE(G${first}:G${last})`},'',{f:`SUM(I${first}:I${last})`},{f:`SUM(J${first}:J${last})`}]);
     a.push([]);
 
     // PAY SUMMARY -- row numbers tracked explicitly (all assigned up front,
     // then pushed in display order) so the formulas below and the number
     // formats after aoa_to_sheet always agree on where everything landed.
-    // GROSS PAY is deliberately the last row of the sheet (2026-08-25, per
-    // Teather) -- Average Hourly Pay's formula references it below itself,
-    // which Excel handles fine as a forward reference.
-    let rn=last+3;
+    // GROSS PAY is deliberately the last row of the sheet -- Average Hourly
+    // Pay's formula references it below itself, which Excel handles fine
+    // as a forward reference.
+    let rn=totalsRow+2;
     const rSummary=rn;
     const rTicketHrs=++rn;
     const rTier=++rn;
@@ -511,24 +563,31 @@ function downloadWorkbook(){
     const rGross=++rn;
     a.push(['PAY SUMMARY']);
     a.push(['Total Ticket Hours','',r.total_ticket]);
-    a.push(['Tier','',r.tier]);
-    a.push(['Commission','',r.commission]);
-    a.push(['Fuel ($5/house, $10 in Lancaster = "Gas Reim")','',r.fuel]);
-    a.push(['Tips','',r.tips]);
-    a.push(['Trainer Pay ($20/day/trainee)','',r.trainerPay]);
+    a.push(['Tier','',r.rate]);   // shown as a %, e.g. 36%, not the 1/2/3 tier number
+    // Commission/Tips are live formulas summing the job rows above, not
+    // plain numbers -- editing a per-clean Commission/Tip now updates Pay
+    // Summary (and GROSS PAY) automatically, per Teather's request.
+    a.push(['Commission','',{f:`SUM(I${first}:I${last})`}]);
+    a.push(['Fuel Charge','',r.fuel]);
+    a.push(['Tips','',{f:`SUM(J${first}:J${last})`}]);
+    a.push(['Trainer Pay','',r.trainerPay]);
     a.push(['Training / Bonus Pay','',0]);      // you fill
     a.push(['Meeting / Other Pay','',0]);        // you fill
     a.push(['Deductions','',0]);                  // you fill
-    a.push(['Total Clocked Hours (from time clock)','',null]);   // you fill
+    a.push(['Total Hours','',0]);   // you fill -- 0 not blank, so the Number format actually sticks (a truly empty cell can't carry a format in this library)
     a.push(['Average Hourly Pay','',{f:`IFERROR(C${rGross}/C${rHours},"")`}]);
     a.push(['GROSS PAY','',{f:`SUM(C${rComm}:C${rMeet})-C${rDed}`}]);
 
     const sheetName=t.slice(0,31);
     const techWs=ws(t,a);
+    techWs['!merges']=[{s:{r:0,c:0},e:{r:0,c:9}}];
+    techWs['!cols']=[{wch:12},{wch:10},{wch:20},{wch:10},{wch:10},{wch:9},{wch:9},{wch:7},{wch:11},{wch:8}];
     ['D','G','I','J'].forEach(col=>zCol(techWs,col,first,totalsRow,CUR));
     ['E','F'].forEach(col=>zCol(techWs,col,first,totalsRow,NUM2));
     zCol(techWs,'H',first,last,PCT);
-    [rTicketHrs,rHours].forEach(row=>zCell(techWs,'C'+row,NUM2));
+    zCell(techWs,'C'+rTicketHrs,NUM2);
+    zCell(techWs,'C'+rHours,NUM2);
+    zCell(techWs,'C'+rTier,PCT);
     [rComm,rFuel,rTips,rTrainerFee,rTrain,rMeet,rDed,rGross,rAvg].forEach(row=>zCell(techWs,'C'+row,CUR));
     grossRefs.push(`'${sheetName}'!C${rGross}`);
   });
@@ -540,25 +599,26 @@ function downloadWorkbook(){
     zCell(sumWs,'C'+(sum.length+1),CUR);
   }
   // Commercial log -- everyone who was on site, trainees included (this is
-  // a workers'-comp presence record, not a pay record). Tier/Pay columns
-  // added 2026-08-25: Pay is this tech's actual commission on that specific
-  // job (already computed per-job above); trainees show "Trainee (hourly)"
-  // and blank pay since they're paid hourly via Square, not commission --
-  // showing $0.00 there would misleadingly read as "worked for nothing."
+  // a workers'-comp presence record, not a pay record). Tier/Pay columns:
+  // Pay is this tech's actual commission on that specific job (already
+  // computed per-job above); trainees show "Trainee (hourly)" and blank
+  // pay since they're paid hourly via Square, not commission -- showing
+  // $0.00 there would misleadingly read as "worked for nothing."
   const cm=[['Commercial jobs — workers comp log',wkA+'–'+wkB,'Pay Date',payDateStr],[],
     ['Technician','Date','Client / Company','Price','Ticket Hrs','Actual Hrs','Tier','Pay']];
   allNames.forEach(t=>res[t].commercial.forEach(j=>{
     const tierLabel=res[t].trainee?'Trainee (hourly)':'Tier '+res[t].tier;
     const pay=res[t].trainee?'':j.commission;
-    cm.push([t,j.date,(j.company||j.customer),j.price,j.ticket,j.actual,tierLabel,pay]);
+    cm.push([t,j.date,custDisplay(j),j.price,j.ticket,j.actual,tierLabel,pay]);
   }));
   const cmWs=ws('Commercial Log',cm);
+  cmWs['!cols']=[{wch:18},{wch:10},{wch:20},{wch:10},{wch:10},{wch:10},{wch:14},{wch:9}];
   const cmLast=3+allNames.reduce((s,t)=>s+res[t].commercial.length,0);
   zCol(cmWs,'D',4,cmLast,CUR);
   zCol(cmWs,'E',4,cmLast,NUM2);
   zCol(cmWs,'F',4,cmLast,NUM2);
   zCol(cmWs,'H',4,cmLast,CUR);
-  XLSX.writeFile(wb,`Fresh_Start_Payroll_${wkA.replace('/','')}-${fmtDate(S.weekEnd).replace('/','')}.xlsx`);
+  XLSX.writeFile(wb,`Fresh_Start_Payroll_${fmtDate(S.weekStart).replace('/','')}-${fmtDate(S.weekEnd).replace('/','')}.xlsx`);
 }
 </script>
 </body>
