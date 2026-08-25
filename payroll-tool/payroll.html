@@ -209,9 +209,21 @@ function run(apptText, assnText, roster){
   const wd=d=>{const [m,dd,y]=d.split('/').map(Number); return new Date(y,m-1,dd).getTime();};
   function compute(tech, jobs){
     jobs=jobs.slice().sort((a,b)=> wd(a.date)-wd(b.date) || ((ptimeMin(a.clock_in)||0)-(ptimeMin(b.clock_in)||0)));
-    const completed=jobs.filter(j=>j.status==='Completed');
-    const cancelled=jobs.filter(j=>j.status!=='Completed');
+    // Real bug fixed 2026-08-25: this used to require the status to be the
+    // EXACT string "Completed" to get paid -- anything else (including a
+    // real, worked, charged job whose ZenMaid status hadn't finished
+    // syncing to "Completed" yet at export time, e.g. "Active") silently
+    // fell into "cancelled, excluded" with no other warning. Confirmed
+    // against a real week's export: a genuine $120 job with real clock
+    // times got dropped this way. Flipped to a denylist -- only statuses
+    // that actually mean "didn't happen" are excluded; anything else is
+    // paid, but flagged (STATUS_REVIEW below) if it isn't literally
+    // "Completed" so it's never silent either way.
+    const NOT_WORKED=/cancel|no.?show|declined/i;
+    const completed=jobs.filter(j=>!NOT_WORKED.test(j.status));
+    const cancelled=jobs.filter(j=>NOT_WORKED.test(j.status));
     const trainee=isTrainee(tech);
+    const flags=[];
     for(const j of completed){
       let cl=(house_cleaners[j.k]||[]).filter(Boolean); if(!cl.length)cl=[tech];
       if(cl.indexOf(tech)<0)cl=cl.concat([tech]);
@@ -222,10 +234,10 @@ function run(apptText, assnText, roster){
       // denominator as the fuel-stipend split (j.nont.length), not the
       // full crew, since trainees aren't paid out of this tool at all.
       j.tip=r2((j.tip||0)/(j.nont.length||1));
+      if(j.status!=='Completed')flags.push(['STATUS_REVIEW',`${j.date} ${j.customer.slice(0,24)} — ZenMaid status shows "${j.status}", not "Completed"; paid anyway, please confirm it actually happened.`]);
     }
     const total_ticket=r2(completed.reduce((s,j)=>s+(j.credited||0),0));
     const [tier,rate]=tierFor(total_ticket);
-    const flags=[];
     // Trainer pay: $20 per day per trainee trained, not per job -- the same
     // trainee across two jobs the same day is still one day of training.
     const trainerDayTrainees={};
@@ -388,8 +400,8 @@ function custInitial(full){
   return parts[0][0].toUpperCase()+'. '+parts[parts.length-1];
 }
 const custDisplay=j=>j.company||custInitial(j.customer);
-const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',HOURS_SPLIT:'info',LANCASTER_FUEL:'info',TRAINER_PAY:'info'};
-const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',HOURS_SPLIT:'Split by hours',LANCASTER_FUEL:'Lancaster $10 fuel',TRAINER_PAY:'Trainer pay'};
+const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',STATUS_REVIEW:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',HOURS_SPLIT:'info',LANCASTER_FUEL:'info',TRAINER_PAY:'info'};
+const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',STATUS_REVIEW:'Status ≠ Completed',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',HOURS_SPLIT:'Split by hours',LANCASTER_FUEL:'Lancaster $10 fuel',TRAINER_PAY:'Trainer pay'};
 
 $('#genBtn').onclick=()=>{
   const rmap={};S.techList.forEach(n=>{if(S.roster[n]&&S.roster[n].status==='trainee')rmap[n]=true;});
@@ -426,7 +438,7 @@ function render(){
 
   // flags
   const allFlags=[];names.forEach(t=>res[t].flags.forEach(f=>allFlags.push([t,f[0],f[1]])));
-  const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3,HOURS_SPLIT:3,LANCASTER_FUEL:3,TRAINER_PAY:3};
+  const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,STATUS_REVIEW:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3,HOURS_SPLIT:3,LANCASTER_FUEL:3,TRAINER_PAY:3};
   allFlags.sort((a,b)=>(order[a[1]]??9)-(order[b[1]]??9));
   html+=`<div class="card"><h2>Review flags · ${allFlags.length}</h2><div class="muted" style="font-size:13px;margin-bottom:10px">Red = check before paying · yellow = decide · blue = informational.</div>`;
   allFlags.forEach(([t,typ,msg])=>{const cls=FLAGCLASS[typ]||'info';
