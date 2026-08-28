@@ -379,8 +379,27 @@ function handleFile(input,which){
     if(slot==='A'){S.apptText=text;$('#fA').textContent='✓ '+f.name;$('#dropA').classList.add('ok');}
     else{S.assnText=text;$('#fB').textContent='✓ '+f.name;$('#dropB').classList.add('ok');}
     parseWeek();buildRoster();ready();
+    syncRosterToSupabase();
   };
   rd.readAsText(f);
+}
+// Quietly keeps the Employee Pulse Survey's technician list current --
+// every real payroll week already reflects exactly who's actually working
+// (trainees included), so there's nothing to add or remove by hand for new
+// hires or turnover. Fire-and-forget: uses the same public/publishable key
+// already used elsewhere in this app (never a secret), and never blocks or
+// errors the payroll tool itself if the request fails (e.g. offline use).
+const PULSE_SUPABASE_URL='https://zhbuxfflfyhqxzgtpwkf.supabase.co';
+const PULSE_SUPABASE_KEY='sb_publishable_90rqTx_I_-1cTK7TksemRw_YRePULFj';
+function isoDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function syncRosterToSupabase(){
+  if(!S.techList.length||!S.weekEnd)return;
+  const rows=S.techList.map(name=>({name,last_seen_date:isoDate(S.weekEnd)}));
+  fetch(PULSE_SUPABASE_URL+'/rest/v1/rge_roster?on_conflict=name',{
+    method:'POST',
+    headers:{apikey:PULSE_SUPABASE_KEY,Authorization:'Bearer '+PULSE_SUPABASE_KEY,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates'},
+    body:JSON.stringify(rows)
+  }).catch(()=>{});
 }
 $('#fileA').onchange=e=>handleFile(e.target,'A');
 $('#fileB').onchange=e=>handleFile(e.target,'B');

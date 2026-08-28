@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { weekStart, weekEnd, toDateStr, weekIndexForDateStr, todayWeekIndex } from "@/lib/weeks";
 import { monthStart, monthEnd, currentMonthIndex, monthIndexForDateStr } from "@/lib/months";
 import { SECTIONS, fmtCell, computeStatus, WHY_TEXT, type Row, type Status } from "@/lib/metrics";
+import { PULSE_METRICS, computeIncluded, computeCompanyAverages, type PulseRow, type RosterRow } from "@/lib/pulse";
 
 type KpiConfigRow = {
   kpi_key: string;
@@ -31,6 +32,8 @@ export default function CeoDashboardPage() {
   const [monthRowsMap, setMonthRowsMap] = useState<Map<number, Row[]>>(new Map());
   const [dataLoading, setDataLoading] = useState(false);
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [pulseResponses, setPulseResponses] = useState<PulseRow[]>([]);
+  const [pulseRoster, setPulseRoster] = useState<RosterRow[]>([]);
 
   const TODAY_WEEK = todayWeekIndex();
   const LAST_COMPLETE_WEEK = Math.max(0, TODAY_WEEK - 1);
@@ -81,6 +84,16 @@ export default function CeoDashboardPage() {
       });
       setWeekRowsMap(wMap);
       setMonthRowsMap(mMap);
+
+      const [{ data: pr }, { data: ro }] = await Promise.all([
+        supabase.from("pulse_responses").select("*"),
+        supabase.from("rge_roster").select("*"),
+      ]);
+      if (!cancelled) {
+        setPulseResponses((pr as PulseRow[]) || []);
+        setPulseRoster((ro as RosterRow[]) || []);
+      }
+
       setDataLoading(false);
     })();
     return () => {
@@ -107,6 +120,9 @@ export default function CeoDashboardPage() {
     rows: sec.rows.filter((r) => r.trueKPI && r.key !== "gross_revenue"),
   })).filter((sec) => sec.rows.length > 0);
 
+  const pulseIncluded = computeIncluded(pulseResponses, pulseRoster);
+  const pulseAvg = computeCompanyAverages(pulseIncluded);
+
   return (
     <div className="wrap">
       <div className="topbar">
@@ -126,6 +142,9 @@ export default function CeoDashboardPage() {
           </div>
           <Link href="/payroll" className="settings-link">
             💰 Payroll
+          </Link>
+          <Link href="/pulse" className="settings-link">
+            💚 Pulse
           </Link>
           <Link href="/lists-admin" className="settings-link">
             ⚙️ Settings
@@ -265,6 +284,24 @@ export default function CeoDashboardPage() {
               </div>
             </div>
           ))}
+
+          <div className="group">
+            <div className="group-title">Employee Pulse</div>
+            <Link href="/pulse" className="pulse-card">
+              <div className="pulse-sub">
+                Average of each active tech&apos;s most recent answer — {pulseIncluded.length} people counted. See full results,
+                individual history →
+              </div>
+              <div className="pulse-grid">
+                {pulseAvg.map((m) => (
+                  <div className="pulse-tile" key={m.key}>
+                    <div className="pulse-label">{m.label}</div>
+                    <div className="pulse-value">{m.value !== null ? `${m.value} / ${m.max}` : "—"}</div>
+                  </div>
+                ))}
+              </div>
+            </Link>
+          </div>
         </>
       )}
 
@@ -550,6 +587,43 @@ export default function CeoDashboardPage() {
         }
         .pill.neutral :global(.dot) {
           background: var(--ink-faint);
+        }
+        .pulse-card {
+          display: block;
+          text-decoration: none;
+          color: inherit;
+          background: var(--surface);
+          border: 1px solid var(--line);
+          border-radius: 14px;
+          padding: 16px 18px;
+        }
+        .pulse-card:hover {
+          border-color: var(--accent);
+        }
+        .pulse-sub {
+          font-size: 12.5px;
+          color: var(--ink-muted);
+          margin-bottom: 12px;
+        }
+        .pulse-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+          gap: 10px;
+        }
+        .pulse-tile {
+          background: var(--surface-2);
+          border-radius: 10px;
+          padding: 10px 12px;
+        }
+        .pulse-label {
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--ink-muted);
+          margin-bottom: 3px;
+        }
+        .pulse-value {
+          font-size: 18px;
+          font-weight: 800;
         }
       `}</style>
     </div>
