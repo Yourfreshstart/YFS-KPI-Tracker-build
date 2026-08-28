@@ -52,7 +52,7 @@ export const SECTIONS: { title: string; rows: MetricDef[] }[] = [
       { key: "gross_revenue", label: "Gross Revenue", fmt: "usd", trueKPI: true, cadence: "weekly", compute: (r) => sumField(r, "daily_revenue") },
       {
         key: "payroll_pct",
-        label: "Payroll as % of Revenue",
+        label: "COGS",
         fmt: "pct1",
         trueKPI: true,
         cadence: "weekly",
@@ -63,8 +63,34 @@ export const SECTIONS: { title: string; rows: MetricDef[] }[] = [
           const hasPayroll = r.some((row) => row.total_payroll_taxes !== null && row.total_payroll_taxes !== undefined);
           if (!hasPayroll) return null;
           const rev = sumField(r, "daily_revenue");
-          const payroll = sumField(r, "total_payroll_taxes");
+          // COGS = Total Payroll+Taxes + Workers Comp - Office Pay - Tips.
+          // Office Pay/Tips are subtracted because they're not techs' labor
+          // cost against revenue (2026-08-28, per Teather -- this is what
+          // the % always should have measured; Workers Comp wasn't folded
+          // in before, and Office Pay/Tips weren't being netted out).
+          const payroll =
+            sumField(r, "total_payroll_taxes") + sumField(r, "workers_comp_due") - sumField(r, "office_pay") - sumField(r, "tips");
           return rev > 0 ? Math.round((payroll / rev) * 1000) / 10 : null;
+        },
+      },
+      {
+        key: "office_payroll_pct",
+        label: "Office Payroll %",
+        fmt: "pct1",
+        trueKPI: true,
+        cadence: "weekly",
+        compute: (r) => {
+          // office_pay is only ever filled in on Mondays, same null-guard
+          // pattern as COGS above.
+          const hasOfficePay = r.some((row) => row.office_pay !== null && row.office_pay !== undefined);
+          if (!hasOfficePay) return null;
+          const rev = sumField(r, "daily_revenue");
+          // +10% is a synthetic estimate for employer taxes on office pay
+          // specifically (the real Taxes figure entered elsewhere already
+          // covers everyone combined, so it can't be split back out) --
+          // added 2026-08-28, per Teather.
+          const office = sumField(r, "office_pay") * 1.1;
+          return rev > 0 ? Math.round((office / rev) * 1000) / 10 : null;
         },
       },
       {
@@ -199,19 +225,27 @@ export const ALL_METRICS: MetricDef[] = SECTIONS.flatMap((s) => s.rows);
 // not the metric run once over the whole stack of rows.
 const PERIOD_SENSITIVE_KEYS = new Set(["avg_rev_per_rge"]);
 
-// Payroll % is a fine ratio-of-sums *when every week in the period actually
-// has payroll entered* -- but total_payroll_taxes only ever gets filled in
-// on Mondays, so a week that's missing it entirely still contributes its
-// real revenue to the denominator while adding $0 to the payroll side,
-// silently dragging the whole period's % down. Over a single week
-// (Weekly Ops) that's caught by payroll_pct's own null-guard above. Over a
-// month/YTD it isn't, unless the weeks with no payroll data are dropped
-// from the sum entirely rather than counted as $0.
-const WEEK_FILTERED_KEYS = new Set(["payroll_pct"]);
+// Payroll-based %s are fine as a ratio-of-sums *when every week in the
+// period actually has that week's Monday payroll block entered* -- but
+// those fields only ever get filled in on Mondays, so a week that's
+// missing them entirely still contributes its real revenue to the
+// denominator while adding $0 to the payroll side, silently dragging the
+// whole period's % down. Over a single week (Weekly Ops) that's caught by
+// the metric's own null-guard above. Over a month/YTD it isn't, unless the
+// weeks with no data for the relevant field are dropped from the sum
+// entirely rather than counted as $0. office_payroll_pct got its own entry
+// (checking office_pay, not total_payroll_taxes) since a week could in
+// theory have one filled in without the other -- e.g. any week before
+// 2026-08-28, when office_pay didn't exist yet (2026-08-28).
+const WEEK_FILTERED_KEYS: Record<string, string> = {
+  payroll_pct: "total_payroll_taxes",
+  office_payroll_pct: "office_pay",
+};
 
 export function computeOverPeriod(row: MetricDef, rows: Row[]): number | null {
   if (!rows.length) return null;
-  if (WEEK_FILTERED_KEYS.has(row.key)) {
+  if (row.key in WEEK_FILTERED_KEYS) {
+    const presenceField = WEEK_FILTERED_KEYS[row.key];
     const byWeek = new Map<number, Row[]>();
     for (const r of rows) {
       const wi = weekIndexForDateStr(r.entry_date);
@@ -220,8 +254,8 @@ export function computeOverPeriod(row: MetricDef, rows: Row[]): number | null {
     }
     const completeRows: Row[] = [];
     byWeek.forEach((wRows) => {
-      const hasPayroll = wRows.some((r) => r.total_payroll_taxes !== null && r.total_payroll_taxes !== undefined);
-      if (hasPayroll) completeRows.push(...wRows);
+      const hasData = wRows.some((r) => r[presenceField] !== null && r[presenceField] !== undefined);
+      if (hasData) completeRows.push(...wRows);
     });
     return completeRows.length ? row.compute(completeRows) : null;
   }
@@ -283,6 +317,7 @@ export function computeStatus(key: string, v: number, prev: number | null | unde
 export const WHY_TEXT: Record<string, string> = {
   gross_revenue: "The core weekly revenue figure — the single number the whole dashboard leads with.",
   payroll_pct: "Keeps labor cost in a sustainable band relative to what came in.",
+  office_payroll_pct: "Keeps office/admin staffing cost in a sustainable band relative to what came in.",
   avg_rev_per_rge: "Shows how efficiently the team is generating revenue per technician.",
   total_recurring_clients: "The base of predictable, recurring revenue.",
   net_recurring_growth: "Recurring clients added minus recurring clients lost — the real growth signal.",

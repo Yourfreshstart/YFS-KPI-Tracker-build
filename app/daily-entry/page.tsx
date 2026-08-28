@@ -37,6 +37,8 @@ type EntryFields = {
   new_hires: number;
   total_payroll_taxes: number;
   workers_comp_due: number;
+  office_pay: number;
+  tips: number;
   highest_paid_cleaner: number;
   trainees_paid: number;
   total_trainee_pay: number;
@@ -70,6 +72,8 @@ const DEFAULT_ENTRY: EntryFields = {
   new_hires: 0,
   total_payroll_taxes: 0,
   workers_comp_due: 0,
+  office_pay: 0,
+  tips: 0,
   highest_paid_cleaner: 0,
   trainees_paid: 0,
   total_trainee_pay: 0,
@@ -137,6 +141,8 @@ const STAFFING_FIELDS: [keyof EntryFields, string][] = [
 const MONDAY_FIELDS: [keyof EntryFields, string, boolean][] = [
   ["total_payroll_taxes", "Total Payroll + Taxes", true],
   ["workers_comp_due", "Workers Comp Due", true],
+  ["office_pay", "Office Pay", true],
+  ["tips", "Tips", true],
   ["highest_paid_cleaner", "Highest Paid Cleaner", true],
   ["trainees_paid", "# Trainees Paid", false],
   ["total_trainee_pay", "Total Trainee Pay", true],
