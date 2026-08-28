@@ -127,9 +127,6 @@ export default function CeoDashboardPage() {
           <Link href="/payroll" className="settings-link">
             💰 Payroll
           </Link>
-          <Link href="/kpi-intake-admin" className="settings-link">
-            📋 Interviews
-          </Link>
           <Link href="/lists-admin" className="settings-link">
             ⚙️ Settings
           </Link>
