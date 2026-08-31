@@ -622,7 +622,10 @@ function downloadWorkbook(){
     const sheetName=t.slice(0,31);
     const techWs=ws(t,a);
     techWs['!merges']=[{s:{r:0,c:0},e:{r:0,c:9}}];
-    techWs['!cols']=[{wch:12},{wch:10},{wch:20},{wch:10},{wch:10},{wch:9},{wch:9},{wch:7},{wch:11},{wch:8}];
+    // Column A width bumped 22 (was 12) so the Pay Summary labels below the
+    // job table -- "Training / Bonus Pay" etc, up to 21 characters -- show
+    // in full instead of getting visually cut off (2026-08-31, per Teather).
+    techWs['!cols']=[{wch:22},{wch:10},{wch:20},{wch:10},{wch:10},{wch:9},{wch:9},{wch:7},{wch:11},{wch:8}];
     ['D','G','I','J'].forEach(col=>zCol(techWs,col,first,totalsRow,CUR));
     ['E','F'].forEach(col=>zCol(techWs,col,first,totalsRow,NUM2));
     zCol(techWs,'H',first,last,PCT);
