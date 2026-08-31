@@ -490,12 +490,22 @@ function nextFriday(d){
   return nd;
 }
 function fmtDateY(d){return (d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear();}
+// Real bug fixed 2026-08-31: ZenMaid's actual export dates are zero-padded
+// ("08/24/2026"), but fmtDateY() above is NOT ("8/24/2026") -- used only
+// for display (Week/Pay Date labels), which is fine. dateRangeList() needs
+// to produce keys that exactly STRING-MATCH j.date (the raw value read off
+// the real CSV) to look up that day's jobs, so it needs its own zero-padded
+// formatter. Without this, every day silently missed its match and fell
+// through to "no work that day," blanking every real job off every
+// tech's sheet -- caught from a real payroll run, not synthetic test data
+// (which had used non-padded dates and accidentally matched the bug).
+function fmtDateMatch(d){return String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'/'+d.getFullYear();}
 function dateRangeList(start,end){
-  // Every calendar day from start to end inclusive, "M/D/YYYY" -- matches
-  // the raw date strings ZenMaid exports use, so it lines up with j.date.
+  // Every calendar day from start to end inclusive, zero-padded
+  // "MM/DD/YYYY" to match the raw date strings ZenMaid exports use.
   const out=[]; let d=new Date(start.getFullYear(),start.getMonth(),start.getDate());
   const endT=new Date(end.getFullYear(),end.getMonth(),end.getDate()).getTime();
-  while(d.getTime()<=endT){ out.push(fmtDateY(d)); d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1); }
+  while(d.getTime()<=endT){ out.push(fmtDateMatch(d)); d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1); }
   return out;
 }
 // Excel's built-in "Narrow" print margins (inches) -- verified these
