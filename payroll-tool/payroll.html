@@ -320,7 +320,7 @@ global.PayrollEngine=API;
 </script>
 <script>
 /* ---------- app ---------- */
-const S={apptText:null,assnText:null,roster:{},results:null,weekStart:null,weekEnd:null,techList:[]};
+const S={apptText:null,assnText:null,roster:{},results:null,weekStart:null,weekEnd:null,techList:[],milestoneRoster:{},confirmedBonuses:[]};
 const $=s=>document.querySelector(s);
 function loadRoster(){try{return JSON.parse(localStorage.getItem('yfs_roster')||'{}')}catch(e){return{}}}
 function saveRoster(){try{localStorage.setItem('yfs_roster',JSON.stringify(S.roster))}catch(e){}}
@@ -394,12 +394,34 @@ const PULSE_SUPABASE_KEY='sb_publishable_90rqTx_I_-1cTK7TksemRw_YRePULFj';
 function isoDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function syncRosterToSupabase(){
   if(!S.techList.length||!S.weekEnd)return;
-  const rows=S.techList.map(name=>({name,last_seen_date:isoDate(S.weekEnd)}));
-  fetch(PULSE_SUPABASE_URL+'/rest/v1/rge_roster?on_conflict=name',{
-    method:'POST',
-    headers:{apikey:PULSE_SUPABASE_KEY,Authorization:'Bearer '+PULSE_SUPABASE_KEY,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates'},
-    body:JSON.stringify(rows)
-  }).catch(()=>{});
+  const lastSeen=isoDate(S.weekEnd);
+  const names=S.techList;
+  const nameFilter=names.map(n=>encodeURIComponent(n)).join(',');
+  const rHeaders={apikey:PULSE_SUPABASE_KEY,Authorization:'Bearer '+PULSE_SUPABASE_KEY};
+  const wHeaders={...rHeaders,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates'};
+  // first_seen_date (used for the 14/90-day trainer-bonus milestones below)
+  // must only ever be set ONCE, on a person's true first appearance -- so a
+  // brand-new name gets it included in its upsert row, but a name that
+  // already exists gets a SEPARATE upsert call that omits the field
+  // entirely, so merge-duplicates has nothing to overwrite it with. (Two
+  // separate calls, not one mixed batch: a single batch upsert would need
+  // the same column set for every row, which would send first_seen_date as
+  // an explicit null for the "no value" rows and wipe out the real date.)
+  fetch(PULSE_SUPABASE_URL+'/rest/v1/rge_roster?select=name&name=in.('+nameFilter+')',{headers:rHeaders})
+    .then(r=>r.json())
+    .then(existingRows=>{
+      const existing=new Set((Array.isArray(existingRows)?existingRows:[]).map(r=>r.name));
+      const brandNew=names.filter(n=>!existing.has(n));
+      const alreadyKnown=names.filter(n=>existing.has(n));
+      const calls=[];
+      if(brandNew.length) calls.push(fetch(PULSE_SUPABASE_URL+'/rest/v1/rge_roster?on_conflict=name',{
+        method:'POST',headers:wHeaders,body:JSON.stringify(brandNew.map(name=>({name,last_seen_date:lastSeen,first_seen_date:lastSeen})))
+      }));
+      if(alreadyKnown.length) calls.push(fetch(PULSE_SUPABASE_URL+'/rest/v1/rge_roster?on_conflict=name',{
+        method:'POST',headers:wHeaders,body:JSON.stringify(alreadyKnown.map(name=>({name,last_seen_date:lastSeen})))
+      }));
+      return Promise.all(calls);
+    }).catch(()=>{});
 }
 $('#fileA').onchange=e=>handleFile(e.target,'A');
 $('#fileB').onchange=e=>handleFile(e.target,'B');
@@ -422,10 +444,72 @@ const custDisplay=j=>j.company||custInitial(j.customer);
 const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',STATUS_REVIEW:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',HOURS_SPLIT:'info',LANCASTER_FUEL:'info',TRAINER_PAY:'info'};
 const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',STATUS_REVIEW:'Status ≠ Completed',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',HOURS_SPLIT:'Split by hours',LANCASTER_FUEL:'Lancaster $10 fuel',TRAINER_PAY:'Trainer pay'};
 
-$('#genBtn').onclick=()=>{
+// Trainer milestone bonuses -- $50 once a trainee's first day was 14+
+// calendar days ago, $175 once it was 90+ -- flagged from rge_roster's
+// first_seen_date (set once, automatically, the day a name first appears
+// in any payroll run; see syncRosterToSupabase above), checked against
+// S.weekEnd (this payroll week), never re-triggered once confirmed/denied.
+const MILESTONES=[{key:'14',days:14,amount:50},{key:'90',days:90,amount:175}];
+async function fetchMilestoneRoster(traineeNames){
+  if(!traineeNames.length)return {};
+  const nameFilter=traineeNames.map(n=>encodeURIComponent(n)).join(',');
+  try{
+    const res=await fetch(PULSE_SUPABASE_URL+'/rest/v1/rge_roster?select=name,first_seen_date,milestone14_status,milestone90_status&name=in.('+nameFilter+')',{
+      headers:{apikey:PULSE_SUPABASE_KEY,Authorization:'Bearer '+PULSE_SUPABASE_KEY}
+    });
+    const rows=await res.json();
+    const map={}; (Array.isArray(rows)?rows:[]).forEach(r=>map[r.name]=r);
+    return map;
+  }catch(e){ return {}; }
+}
+function daysBetweenISO(isoStr,d){
+  if(!isoStr)return null;
+  const [y,m,day]=isoStr.split('-').map(Number);
+  const a=Date.UTC(y,m-1,day), b=Date.UTC(d.getFullYear(),d.getMonth(),d.getDate());
+  return Math.round((b-a)/86400000);
+}
+// Pending flags this session, computed fresh each render() from
+// S.milestoneRoster + the live trainer dropdown -- see buildRoster().
+function computeMilestoneFlags(){
+  const out=[];
+  Object.keys(S.milestoneRoster||{}).forEach(name=>{
+    if(!S.roster[name]||S.roster[name].status!=='trainee')return; // only still-current trainees
+    const trainer=S.roster[name].trainer;
+    if(!trainer)return; // no trainer assigned this week, nothing to credit yet
+    const row=S.milestoneRoster[name]; if(!row||!row.first_seen_date)return;
+    MILESTONES.forEach(m=>{
+      const statusField='milestone'+m.key+'_status';
+      if(row[statusField])return; // already confirmed or denied
+      const daysSince=daysBetweenISO(row.first_seen_date,S.weekEnd);
+      if(daysSince!==null && daysSince>=m.days) out.push({trainee:name,trainer,milestone:m.key,amount:m.amount,daysSince});
+    });
+  });
+  return out;
+}
+async function resolveMilestone(trainee,milestone,action){
+  const field='milestone'+milestone+'_status';
+  await fetch(PULSE_SUPABASE_URL+'/rest/v1/rge_roster?name=eq.'+encodeURIComponent(trainee),{
+    method:'PATCH',
+    headers:{apikey:PULSE_SUPABASE_KEY,Authorization:'Bearer '+PULSE_SUPABASE_KEY,'Content-Type':'application/json'},
+    body:JSON.stringify({[field]:action})
+  }).catch(()=>{});
+  if(S.milestoneRoster[trainee])S.milestoneRoster[trainee][field]=action;
+  if(action==='confirmed'){
+    const m=MILESTONES.find(x=>x.key===milestone);
+    const trainer=S.roster[trainee]&&S.roster[trainee].trainer;
+    if(trainer&&m)S.confirmedBonuses.push({trainer,trainee,milestone,amount:m.amount});
+  }
+  render();
+}
+
+$('#genBtn').onclick=async()=>{
   const rmap={};S.techList.forEach(n=>{if(S.roster[n]&&S.roster[n].status==='trainee')rmap[n]=true;});
   const res=PayrollEngine.run(S.apptText,S.assnText,rmap);
-  S.results=res;render();
+  S.results=res;
+  const traineeNames=Object.keys(res).filter(t=>res[t].trainee);
+  S.milestoneRoster=await fetchMilestoneRoster(traineeNames);
+  S.confirmedBonuses=S.confirmedBonuses||[];
+  render();
   $('#results').scrollIntoView({behavior:'smooth',block:'start'});
 };
 
@@ -455,6 +539,20 @@ function render(){
   if(traineeNames.length)html+=`<div class="muted" style="font-size:12.5px;margin-top:10px">Trainees this week (paid hourly via Square, not included above): ${traineeNames.join(', ')}.</div>`;
   html+=`</div>`;
 
+  // Trainer milestone bonuses -- $50 at a trainee's 14th calendar day,
+  // $175 at their 90th, flagged until Teather confirms (adds it to the
+  // trainer's check, automatically, below) or denies it. Stays visible
+  // every week until resolved either way.
+  const milestoneFlags=computeMilestoneFlags();
+  if(milestoneFlags.length){
+    html+=`<div class="card"><h2>Trainer milestone bonuses · ${milestoneFlags.length}</h2><div class="muted" style="font-size:13px;margin-bottom:10px">Confirm adds it to the trainer's check below automatically. Left unresolved, it keeps showing up every week.</div>`;
+    milestoneFlags.forEach(f=>{
+      html+=`<div class="flag" style="align-items:center"><span class="b warn">Day ${f.milestone}</span><span><b>${f.trainer}</b> trained <b>${f.trainee}</b> — ${f.daysSince} days since their first day (${money(f.amount)})</span>
+        <span style="margin-left:auto;display:flex;gap:6px"><button class="ms-confirm" data-trainee="${f.trainee}" data-milestone="${f.milestone}" style="padding:5px 12px;border-radius:999px;border:none;background:var(--green);color:#fff;font-size:12px;font-weight:700;cursor:pointer">Confirm</button><button class="ms-deny" data-trainee="${f.trainee}" data-milestone="${f.milestone}" style="padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-muted);font-size:12px;font-weight:700;cursor:pointer">Deny</button></span></div>`;
+    });
+    html+=`</div>`;
+  }
+
   // flags
   const allFlags=[];names.forEach(t=>res[t].flags.forEach(f=>allFlags.push([t,f[0],f[1]])));
   const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,STATUS_REVIEW:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3,HOURS_SPLIT:3,LANCASTER_FUEL:3,TRAINER_PAY:3};
@@ -474,6 +572,8 @@ function render(){
 
   $('#results').innerHTML=html;
   $('#dlBtn').onclick=downloadWorkbook;
+  document.querySelectorAll('.ms-confirm').forEach(b=>b.onclick=()=>resolveMilestone(b.dataset.trainee,b.dataset.milestone,'confirmed'));
+  document.querySelectorAll('.ms-deny').forEach(b=>b.onclick=()=>resolveMilestone(b.dataset.trainee,b.dataset.milestone,'denied'));
 }
 
 /* ---------- Excel workbook (SheetJS) ---------- */
@@ -588,6 +688,13 @@ function downloadWorkbook(){
     // GROSS PAY is deliberately the last row of the sheet -- Average Hourly
     // Pay's formula references it below itself, which Excel handles fine
     // as a forward reference.
+    // Confirmed trainer-milestone bonuses ($50 @ day 14, $175 @ day 90 of a
+    // trainee's tenure -- see computeMilestoneFlags/resolveMilestone above)
+    // get their own line(s) here, one per confirmed bonus this tech earned
+    // as a trainer this session, inserted between Trainer Pay and Training/
+    // Bonus Pay -- inside GROSS PAY's SUM range, so they fold in
+    // automatically without changing that formula. Added 2026-09-02.
+    const bonusesForTech=(S.confirmedBonuses||[]).filter(b=>b.trainer===t);
     let rn=totalsRow+2;
     const rSummary=rn;
     const rTicketHrs=++rn;
@@ -596,6 +703,7 @@ function downloadWorkbook(){
     const rFuel=++rn;
     const rTips=++rn;
     const rTrainerFee=++rn;
+    const rBonuses=bonusesForTech.map(()=>++rn);
     const rTrain=++rn;
     const rMeet=++rn;
     const rDed=++rn;
@@ -612,6 +720,9 @@ function downloadWorkbook(){
     a.push(['Fuel Charge','',r.fuel]);
     a.push(['Tips','',{f:`SUM(J${first}:J${last})`}]);
     a.push(['Trainer Pay','',r.trainerPay]);
+    bonusesForTech.forEach(b=>{
+      a.push([`Trainer Milestone Bonus (Day ${b.milestone} — ${b.trainee})`,'',b.amount]);
+    });
     a.push(['Training / Bonus Pay','',0]);      // you fill
     a.push(['Meeting / Other Pay','',0]);        // you fill
     a.push(['Deductions','',0]);                  // you fill
@@ -632,7 +743,7 @@ function downloadWorkbook(){
     zCell(techWs,'C'+rTicketHrs,NUM2);
     zCell(techWs,'C'+rHours,NUM2);
     zCell(techWs,'C'+rTier,PCT);
-    [rComm,rFuel,rTips,rTrainerFee,rTrain,rMeet,rDed,rGross,rAvg].forEach(row=>zCell(techWs,'C'+row,CUR));
+    [rComm,rFuel,rTips,rTrainerFee,...rBonuses,rTrain,rMeet,rDed,rGross,rAvg].forEach(row=>zCell(techWs,'C'+row,CUR));
     grossRefs.push(`'${sheetName}'!C${rGross}`);
   });
   // Grand total across every tech's own GROSS PAY cell -- a live formula,
