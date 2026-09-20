@@ -666,6 +666,18 @@ function downloadWorkbook(){
     const byDate={};
     r.rows.forEach(j=>{(byDate[j.date]=byDate[j.date]||[]).push(j);});
     let rowCount=0;
+    const first=5; // always row 5 -- name, week, blank, column-header are fixed at rows 1-4
+    // Commission is a live formula (Price x %) for Tier 2/3, since neither
+    // tier is ever capped -- exactly correct, no compromise, confirmed
+    // with Teather 2026-09-20. Tier 1 stays a plain computed value on
+    // purpose: Tier 1 has the $16/scheduled-hour cap, and on a job split
+    // between two techs the cap is applied to the job's FULL price before
+    // the split, which "Price" alone (already this tech's split share)
+    // can't reconstruct -- a formula here could show a real job as paying
+    // slightly more than it actually should. Rate ($/hr) is always a
+    // formula either way (Commission/Ticket Hrs) since it just follows
+    // whatever Commission already holds, formula or not.
+    const isTier1=r.tier===1;
     // Every day the pay period covers gets a row even with no work that
     // day -- day/date shown, rest left blank (2026-08-25, per Teather).
     allDates.forEach(ds=>{
@@ -673,7 +685,10 @@ function downloadWorkbook(){
       if(jobsForDay&&jobsForDay.length){
         jobsForDay.forEach((j,idx)=>{
           const yourShare=Math.round(j.base_price*j.factor*100)/100; // this tech's cut of the price on a shared job -- so Price x % actually lines up with Commission
-          a.push([idx===0?dayLabel(ds):'', idx===0?ds:'', custDisplay(j), yourShare, j.ticket, j.actual, (j.ticket?j.commission/j.ticket:''), r.rate, j.commission, j.tip||'']);
+          const rowNum=first+rowCount;
+          const commissionCell=isTier1?j.commission:{f:`D${rowNum}*H${rowNum}`};
+          const rateCell=j.ticket?{f:`IFERROR(I${rowNum}/E${rowNum},"")`}:'';
+          a.push([idx===0?dayLabel(ds):'', idx===0?ds:'', custDisplay(j), yourShare, j.ticket, j.actual, rateCell, r.rate, commissionCell, j.tip||'']);
           rowCount++;
         });
       } else {
@@ -681,7 +696,7 @@ function downloadWorkbook(){
         rowCount++;
       }
     });
-    const first=5,last=4+rowCount;
+    const last=4+rowCount;
     const totalsRow=last+1;
     // G (Rate $/hr) gets an AVERAGE across the week instead of staying
     // blank, per Teather's request.
@@ -717,7 +732,11 @@ function downloadWorkbook(){
     const rAvg=++rn;
     const rGross=++rn;
     a.push(['PAY SUMMARY']);
-    a.push(['Total Ticket Hours','',r.total_ticket]);
+    // Live formula, not a static number -- was going stale whenever a
+    // Ticket Hrs cell got hand-edited in the table above, a real mismatch
+    // Teather caught (2026-09-20). Same SUM range the TOTALS row above
+    // already uses, so they can never disagree.
+    a.push(['Total Ticket Hours','',{f:`SUM(E${first}:E${last})`}]);
     a.push(['Tier','',r.rate]);   // shown as a %, e.g. 36%, not the 1/2/3 tier number
     // Commission/Tips are live formulas summing the job rows above, not
     // plain numbers -- editing a per-clean Commission/Tip now updates Pay
