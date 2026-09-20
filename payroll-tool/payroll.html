@@ -763,11 +763,23 @@ function downloadWorkbook(){
     // string. Merged instead, same fix already proven to work for the tech
     // name on row 1 above it -- a merged cell's text always displays in
     // full, it doesn't depend on overflow behavior at all.
-    techWs['!merges']=[{s:{r:0,c:0},e:{r:0,c:9}},{s:{r:1,c:1},e:{r:1,c:3}},{s:{r:1,c:5},e:{r:1,c:7}}];
-    // Column A width bumped 22 (was 12) so the Pay Summary labels below the
-    // job table -- "Training / Bonus Pay" etc, up to 21 characters -- show
-    // in full instead of getting visually cut off (2026-08-31, per Teather).
-    techWs['!cols']=[{wch:22},{wch:10},{wch:20},{wch:10},{wch:10},{wch:9},{wch:9},{wch:7},{wch:11},{wch:8}];
+    // Every Pay Summary row's label gets the same treatment (merged A:D)
+    // instead of relying on column A alone being wide enough -- lets
+    // column A go back down to a narrower, day-label-sized width (helps
+    // everything fit on one printed page) without cutting off the longer
+    // labels below it, including the Trainer Milestone Bonus line, which
+    // is longer than any of the others. 2026-09-20, per Teather.
+    const paySummaryRows=[rSummary,rTicketHrs,rTier,rComm,rFuel,rTips,rTrainerFee,...rBonuses,rTrain,rMeet,rDed,rHours,rAvg,rGross];
+    techWs['!merges']=[
+      {s:{r:0,c:0},e:{r:0,c:9}},
+      {s:{r:1,c:1},e:{r:1,c:3}},{s:{r:1,c:5},e:{r:1,c:7}},
+      ...paySummaryRows.map(row=>({s:{r:row-1,c:0},e:{r:row-1,c:3}})),
+    ];
+    // Column A narrowed back down to 12 (was 22) -- just enough for the
+    // longest day label ("Wednesday:") -- now that every Pay Summary
+    // label has its own guaranteed-wide merge instead of depending on
+    // this column alone.
+    techWs['!cols']=[{wch:12},{wch:10},{wch:20},{wch:10},{wch:10},{wch:9},{wch:9},{wch:7},{wch:11},{wch:8}];
     ['D','G','I','J'].forEach(col=>zCol(techWs,col,first,totalsRow,CUR));
     ['E','F'].forEach(col=>zCol(techWs,col,first,totalsRow,NUM2));
     zCol(techWs,'H',first,last,PCT);
