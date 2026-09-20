@@ -769,11 +769,24 @@ function downloadWorkbook(){
     // everything fit on one printed page) without cutting off the longer
     // labels below it, including the Trainer Milestone Bonus line, which
     // is longer than any of the others. 2026-09-20, per Teather.
+    // Pay Summary rows are [label, '', value] -- the real dollar/hour
+    // VALUE lives in column C. A merge is only safe up through column B;
+    // merging as far as C (or beyond) would visually swallow that value,
+    // since Excel only displays a merged range's top-left cell -- caught
+    // and fixed before shipping, 2026-09-20 (the value itself would have
+    // stayed correct in the file, just not shown on the printed sheet).
+    // A:B gives the label 22 characters of guaranteed room, same total
+    // width column A alone used to provide -- covers every Pay Summary
+    // label except the Trainer Milestone Bonus line, which is long enough
+    // (with a real trainee name) to still run past that regardless; a
+    // full fix for that one specific label would mean relocating the
+    // value to a different column, a bigger change flagged separately,
+    // not rushed in alongside this one.
     const paySummaryRows=[rSummary,rTicketHrs,rTier,rComm,rFuel,rTips,rTrainerFee,...rBonuses,rTrain,rMeet,rDed,rHours,rAvg,rGross];
     techWs['!merges']=[
       {s:{r:0,c:0},e:{r:0,c:9}},
       {s:{r:1,c:1},e:{r:1,c:3}},{s:{r:1,c:5},e:{r:1,c:7}},
-      ...paySummaryRows.map(row=>({s:{r:row-1,c:0},e:{r:row-1,c:3}})),
+      ...paySummaryRows.map(row=>({s:{r:row-1,c:0},e:{r:row-1,c:1}})),
     ];
     // Column A narrowed back down to 12 (was 22) -- just enough for the
     // longest day label ("Wednesday:") -- now that every Pay Summary
