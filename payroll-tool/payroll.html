@@ -263,8 +263,6 @@ function run(apptText, assnText, roster){
     for(const j of completed){
       const base=(!j.commercial&&j.price>0)?r2(j.price-5):j.price;
       j.base_price=base;
-      let comm=base*rate; const gross=comm;   // full precision, like the Excel =D*I formula
-      if(tier===1&&j.ticket){const cv=CAP*j.ticket; if(comm>cv){comm=cv; flags.push(['TIER1_CAP',`${j.date} ${j.customer.slice(0,20)} capped ${r2(gross)}->${r2(cv)}`]);}}
       let factor;
       if(trainee){factor=0; flags.push(['TRAINEE_HOURLY',`${j.date} ${j.customer.slice(0,20)} — trainee (hourly), commission to trainer`]);}
       else if(j.co.length>1){
@@ -288,7 +286,20 @@ function run(apptText, assnText, roster){
       }
       else factor=1;
       j.factor=factor;
-      const share=comm*factor; commission+=share; j.commission=r2(share); j.rate=rate;
+      // Split first, THEN apply this tech's own rate% and (if Tier 1)
+      // cap -- once a shared job's price is divided by hours worked,
+      // each tech's commission comes entirely from their own share, same
+      // as an unshared job; they're "no longer tied to each other"
+      // (Teather's words). Matches the Price column, which already shows
+      // base_price*factor. Real bug fixed 2026-09-24: this used to cap
+      // the FULL pre-split job commission and split the capped amount --
+      // so a Tier-1 tech sharing a job with a higher-tier tech got paid
+      // roughly their hours-share of the job's cap, not 36% of their own
+      // split price capped at $16/their own ticket hour.
+      const splitBase=r2(base*factor);
+      let comm=splitBase*rate; const gross=comm;
+      if(tier===1&&j.ticket){const cv=CAP*j.ticket; if(comm>cv){comm=cv; flags.push(['TIER1_CAP',`${j.date} ${j.customer.slice(0,20)} capped ${r2(gross)}->${r2(cv)}`]);}}
+      const share=comm; commission+=share; j.commission=r2(share); j.rate=rate;
       if(j.price===0)flags.push(['ZERO_PRICE',`${j.date} ${j.customer.slice(0,24)} (commercial contract?)`]);
       if(!j.clock_in||!j.clock_out)flags.push(['NO_CLOCK',`${j.date} ${j.customer.slice(0,24)} — no clock in/out`]);
       else if(j.ticket&&j.actual!=null){const diff=r2(j.actual-j.ticket); if(Math.abs(diff)>=1.5)flags.push(['TIME_DISCREP',`${j.date} ${j.customer.slice(0,20)} sched ${j.ticket}h vs actual ${j.actual}h (${diff>0?'+':''}${diff})`]);}
