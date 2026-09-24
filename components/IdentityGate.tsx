@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import type { Person } from "@/lib/useIdentity";
 import PinPad from "@/components/PinPad";
 
-const NAMES = ["Teather", "Jan", "Jennifer"];
+const NAMES = ["Teather", "Rachael", "Jennifer"];
 
 export default function IdentityGate({
   onVerified,

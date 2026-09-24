@@ -2,32 +2,39 @@
 
 import { useEffect, useState, useCallback } from "react";
 
-const KEY = "yfs_ceo_unlocked";
+// Stores WHO unlocked it, not just a yes/no flag -- CEO Dashboard and
+// Lists/Admin share this hook but allow different people (Lists/Admin is
+// Teather-only; CEO Dashboard also allows Jennifer as of 2026-09-24), so a
+// page needs to know whose PIN was actually entered, not just that *some*
+// valid PIN was entered somewhere.
+const KEY = "yfs_ceo_unlocked_name";
 
-export function useCeoAuth() {
-  const [unlocked, setUnlocked] = useState(false);
+export function useCeoAuth(allowedNames: string[] = ["Teather"]) {
+  const [unlockedName, setUnlockedName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     try {
-      setUnlocked(sessionStorage.getItem(KEY) === "1");
+      setUnlockedName(sessionStorage.getItem(KEY));
     } catch {
       // ignore
     }
     setLoading(false);
   }, []);
 
-  const unlock = useCallback(() => {
-    setUnlocked(true);
+  const unlocked = !!unlockedName && allowedNames.includes(unlockedName);
+
+  const unlock = useCallback((name: string) => {
+    setUnlockedName(name);
     try {
-      sessionStorage.setItem(KEY, "1");
+      sessionStorage.setItem(KEY, name);
     } catch {
       // ignore
     }
   }, []);
 
   const lock = useCallback(() => {
-    setUnlocked(false);
+    setUnlockedName(null);
     try {
       sessionStorage.removeItem(KEY);
     } catch {

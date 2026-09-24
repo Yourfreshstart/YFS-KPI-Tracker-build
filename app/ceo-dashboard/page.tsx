@@ -26,7 +26,7 @@ type KpiConfigRow = {
 const STATUS_LABEL: Record<Status, string> = { good: "On Track", warning: "Watch", critical: "Off Track" };
 
 export default function CeoDashboardPage() {
-  const { unlocked, loading, unlock, lock } = useCeoAuth();
+  const { unlocked, loading, unlock, lock } = useCeoAuth(["Teather", "Jennifer"]);
   const [config, setConfig] = useState<Record<string, KpiConfigRow>>({});
   const [weekRowsMap, setWeekRowsMap] = useState<Map<number, Row[]>>(new Map());
   const [monthRowsMap, setMonthRowsMap] = useState<Map<number, Row[]>>(new Map());
@@ -103,7 +103,7 @@ export default function CeoDashboardPage() {
   }, [unlocked]);
 
   if (loading) return null;
-  if (!unlocked) return <CeoPinGate onUnlock={unlock} />;
+  if (!unlocked) return <CeoPinGate onUnlock={unlock} allowedNames={["Teather", "Jennifer"]} />;
 
   const heroMetric = SECTIONS[0].rows.find((r) => r.key === "gross_revenue")!;
   const heroRows = weekRowsMap.get(LAST_COMPLETE_WEEK) || [];

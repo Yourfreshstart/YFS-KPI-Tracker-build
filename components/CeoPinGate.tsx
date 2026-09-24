@@ -5,7 +5,13 @@ import { supabase } from "@/lib/supabase";
 import Logo from "@/components/Logo";
 import PinPad from "@/components/PinPad";
 
-export default function CeoPinGate({ onUnlock }: { onUnlock: () => void }) {
+export default function CeoPinGate({
+  onUnlock,
+  allowedNames = ["Teather"],
+}: {
+  onUnlock: (name: string) => void;
+  allowedNames?: string[];
+}) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
@@ -15,17 +21,24 @@ export default function CeoPinGate({ onUnlock }: { onUnlock: () => void }) {
     setError("");
     if (digits.length === 4) {
       setChecking(true);
-      const { data, error: rpcError } = await supabase.rpc("verify_pin", {
-        input_name: "Teather",
-        input_pin: digits,
-      });
+      let matched: string | null = null;
+      for (const name of allowedNames) {
+        const { data, error: rpcError } = await supabase.rpc("verify_pin", {
+          input_name: name,
+          input_pin: digits,
+        });
+        if (!rpcError && data && data.length > 0) {
+          matched = name;
+          break;
+        }
+      }
       setChecking(false);
-      if (rpcError || !data || data.length === 0) {
+      if (!matched) {
         setError("Incorrect PIN, try again");
         setPin("");
         return;
       }
-      onUnlock();
+      onUnlock(matched);
     }
   }
 
