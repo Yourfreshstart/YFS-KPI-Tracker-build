@@ -280,7 +280,6 @@ function run(apptText, assnText, roster){
           const total=coHrs.reduce((s,h)=>s+(h||0),0);
           if(myHrs!=null && coHrs.every(h=>h!=null) && total>0){
             factor=myHrs/total;
-            flags.push(['HOURS_SPLIT',`${j.date} ${j.customer.slice(0,20)} — ${j.nont.length} techs, split by hours: ${myHrs}h of ${total}h (${r2(factor*100)}%)`]);
           } else {
             factor=Math.round(1/j.nont.length*1e4)/1e4;
             flags.push(['AMBIG_SHARE',`${j.date} ${j.customer.slice(0,20)} — ${j.nont.length} non-trainees, missing clock hours; split evenly, confirm`]);
@@ -441,8 +440,8 @@ function custInitial(full){
   return parts[0][0].toUpperCase()+'. '+parts[parts.length-1];
 }
 const custDisplay=j=>j.company||custInitial(j.customer);
-const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',STATUS_REVIEW:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',HOURS_SPLIT:'info',LANCASTER_FUEL:'info',TRAINER_PAY:'info'};
-const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',STATUS_REVIEW:'Status ≠ Completed',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',HOURS_SPLIT:'Split by hours',LANCASTER_FUEL:'Lancaster $10 fuel',TRAINER_PAY:'Trainer pay'};
+const FLAGCLASS={TIME_DISCREP:'crit',DUPLICATE:'crit',NO_CLOCK:'crit',STATUS_REVIEW:'crit',MANUAL_TIME:'warn',AMBIG_SHARE:'warn',TIER1_CAP:'info',CANCELLED:'info',ZERO_PRICE:'warn',TRAINER_FULL:'info',TRAINEE_HOURLY:'info',LANCASTER_FUEL:'info',TRAINER_PAY:'info'};
+const FLAGLABEL={TIME_DISCREP:'Time discrepancy',DUPLICATE:'Duplicate',NO_CLOCK:'No clock in/out',STATUS_REVIEW:'Status ≠ Completed',MANUAL_TIME:'Manual time edit',AMBIG_SHARE:'Who is paid?',TIER1_CAP:'Tier-1 cap',CANCELLED:'Cancelled',ZERO_PRICE:'Zero price',TRAINER_FULL:'Trainer full commission',TRAINEE_HOURLY:'Trainee (hourly)',LANCASTER_FUEL:'Lancaster $10 fuel',TRAINER_PAY:'Trainer pay'};
 
 // Trainer milestone bonuses -- $50 once a trainee's first day was 14+
 // calendar days ago, $175 once it was 90+ -- flagged from rge_roster's
@@ -555,7 +554,7 @@ function render(){
 
   // flags
   const allFlags=[];names.forEach(t=>res[t].flags.forEach(f=>allFlags.push([t,f[0],f[1]])));
-  const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,STATUS_REVIEW:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3,HOURS_SPLIT:3,LANCASTER_FUEL:3,TRAINER_PAY:3};
+  const order={TIME_DISCREP:0,DUPLICATE:0,NO_CLOCK:0,STATUS_REVIEW:0,AMBIG_SHARE:1,MANUAL_TIME:1,ZERO_PRICE:1,CANCELLED:2,TIER1_CAP:3,TRAINER_FULL:3,TRAINEE_HOURLY:3,LANCASTER_FUEL:3,TRAINER_PAY:3};
   allFlags.sort((a,b)=>(order[a[1]]??9)-(order[b[1]]??9));
   html+=`<div class="card"><h2>Review flags · ${allFlags.length}</h2><div class="muted" style="font-size:13px;margin-bottom:10px">Red = check before paying · yellow = decide · blue = informational.</div>`;
   allFlags.forEach(([t,typ,msg])=>{const cls=FLAGCLASS[typ]||'info';
