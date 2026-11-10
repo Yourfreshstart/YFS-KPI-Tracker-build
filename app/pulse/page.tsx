@@ -330,18 +330,18 @@ export default function PulsePage() {
           color: var(--ink);
           text-align: left;
         }
-        .status-row {
+        :global(.status-row) {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 10px;
           flex-wrap: wrap;
         }
-        .status-text {
+        :global(.status-text) {
           font-size: 12.5px;
           color: var(--ink-muted);
         }
-        .seg {
+        :global(.seg) {
           display: flex;
           gap: 3px;
           background: var(--surface);
@@ -349,7 +349,7 @@ export default function PulsePage() {
           border-radius: 999px;
           padding: 3px;
         }
-        .seg button {
+        :global(.seg button) {
           border: none;
           background: transparent;
           color: var(--ink-muted);
@@ -359,11 +359,11 @@ export default function PulsePage() {
           border-radius: 999px;
           cursor: pointer;
         }
-        .seg button.on {
+        :global(.seg button.on) {
           background: var(--accent);
           color: var(--accent-ink);
         }
-        .wrap {
+        :global(.wrap) {
           max-width: 900px;
           margin: 0 auto;
           padding: 24px 20px 70px;
@@ -446,21 +446,21 @@ export default function PulsePage() {
           font-size: 20px;
           font-weight: 800;
         }
-        .empty {
+        :global(.empty) {
           color: var(--ink-faint);
           font-size: 13px;
         }
-        .people {
+        :global(.people) {
           display: flex;
           flex-direction: column;
           gap: 8px;
         }
-        .person {
+        :global(.person) {
           border: 1px solid var(--line);
           border-radius: 10px;
           overflow: hidden;
         }
-        .person-head {
+        :global(.person-head) {
           width: 100%;
           display: flex;
           align-items: center;
@@ -473,14 +473,14 @@ export default function PulsePage() {
           text-align: left;
           flex-wrap: wrap;
         }
-        .person-name {
+        :global(.person-name) {
           font-weight: 700;
           font-size: 14px;
           display: flex;
           align-items: center;
           gap: 8px;
         }
-        .tag {
+        :global(.tag) {
           font-size: 10.5px;
           font-weight: 700;
           color: var(--ink-faint);
@@ -488,40 +488,40 @@ export default function PulsePage() {
           border-radius: 999px;
           padding: 2px 8px;
         }
-        .person-latest {
+        :global(.person-latest) {
           font-size: 12.5px;
           color: var(--ink-muted);
           display: flex;
           align-items: center;
           gap: 8px;
         }
-        .history {
+        :global(.history) {
           background: var(--surface-2);
           padding: 12px 14px;
           display: flex;
           flex-direction: column;
           gap: 10px;
         }
-        .response {
+        :global(.response) {
           padding: 10px 12px;
           background: var(--surface);
           border-radius: 8px;
           border: 1px solid var(--line);
         }
-        .response-date {
+        :global(.response-date) {
           font-size: 12px;
           font-weight: 800;
           color: var(--ink-muted);
           margin-bottom: 6px;
         }
-        .response-scores {
+        :global(.response-scores) {
           display: flex;
           flex-wrap: wrap;
           gap: 10px;
           font-size: 12px;
           color: var(--ink-muted);
         }
-        .response-feedback {
+        :global(.response-feedback) {
           margin-top: 8px;
           font-size: 13px;
           font-style: italic;
