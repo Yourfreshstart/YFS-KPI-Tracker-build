@@ -7,6 +7,7 @@ import CeoPinGate from "@/components/CeoPinGate";
 import Sparkline from "@/components/Sparkline";
 import { useCeoAuth } from "@/lib/useCeoAuth";
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetchAll";
 import { weekStart, weekEnd, toDateStr, weekIndexForDateStr, todayWeekIndex } from "@/lib/weeks";
 import { monthStart, monthEnd, currentMonthIndex, monthIndexForDateStr } from "@/lib/months";
 import { SECTIONS, fmtCell, computeStatus, WHY_TEXT, type Row, type Status } from "@/lib/metrics";
@@ -85,13 +86,13 @@ export default function CeoDashboardPage() {
       setWeekRowsMap(wMap);
       setMonthRowsMap(mMap);
 
-      const [{ data: pr }, { data: ro }] = await Promise.all([
-        supabase.from("pulse_responses").select("*"),
-        supabase.from("rge_roster").select("*"),
+      const [pr, ro] = await Promise.all([
+        fetchAllRows<PulseRow>((from, to) => supabase.from("pulse_responses").select("*").order("id").range(from, to)),
+        fetchAllRows<RosterRow>((from, to) => supabase.from("rge_roster").select("*").order("name").range(from, to)),
       ]);
       if (!cancelled) {
-        setPulseResponses((pr as PulseRow[]) || []);
-        setPulseRoster((ro as RosterRow[]) || []);
+        setPulseResponses(pr);
+        setPulseRoster(ro);
       }
 
       setDataLoading(false);

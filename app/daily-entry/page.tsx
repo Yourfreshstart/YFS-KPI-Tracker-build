@@ -9,9 +9,11 @@ import NumberField from "@/components/NumberField";
 import { useIdentity } from "@/lib/useIdentity";
 import { supabase } from "@/lib/supabase";
 import { downloadCsv, todayStamp, type CsvCell } from "@/lib/csv";
+import { fetchAllRows } from "@/lib/fetchAll";
 
 const MIN = new Date(2026, 0, 5);
-const MAX = new Date(2026, 11, 31);
+// Last day of the current year -- rolls forward on its own each January.
+const MAX = new Date(new Date().getFullYear(), 11, 31);
 
 type EntryFields = {
   daily_revenue: number;
@@ -205,7 +207,9 @@ export default function DailyEntryPage() {
   // genuinely null in the database, not 0).
   async function downloadAllEntries() {
     setDownloading(true);
-    const { data } = await supabase.from("daily_entries").select("*").order("entry_date", { ascending: true });
+    const data = await fetchAllRows<Record<string, unknown>>((from, to) =>
+      supabase.from("daily_entries").select("*").order("entry_date", { ascending: true }).range(from, to)
+    );
     const cols: [string, string][] = [
       ["daily_revenue", "Daily Revenue ($)"],
       ...SALES_FIELDS,
@@ -216,7 +220,7 @@ export default function DailyEntryPage() {
     ];
     const out: CsvCell[][] = [
       ["Date", "Day", ...cols.map(([, label]) => label)],
-      ...(data || []).map((row: Record<string, unknown>) => {
+      ...data.map((row) => {
         const d = String(row.entry_date);
         const day = new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
         return [d, day, ...cols.map(([k]) => (row[k] === null || row[k] === undefined ? "" : Number(row[k])))];

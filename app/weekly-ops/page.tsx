@@ -6,28 +6,31 @@ import NavTabs from "@/components/NavTabs";
 import IdentityGate from "@/components/IdentityGate";
 import { useIdentity } from "@/lib/useIdentity";
 import { supabase } from "@/lib/supabase";
-import { WEEK_COUNT, weekStart, weekEnd, toDateStr, weekIndexForDateStr, todayWeekIndex, fmtWeekLabel } from "@/lib/weeks";
+import { FIRST_YEAR, currentYear, weeksInYear, weekStart, weekEnd, toDateStr, weekIndexForDateStr, todayWeekIndex, fmtWeekLabel } from "@/lib/weeks";
 import { SECTIONS, fmtCell, type Row } from "@/lib/metrics";
 import { downloadCsv, csvNumber, csvLabel, todayStamp, type CsvCell } from "@/lib/csv";
 
-const RANGE_OPTIONS = [8, 13, 52];
+type Mode = 8 | 13 | "year";
+const MODE_OPTIONS: Mode[] = [8, 13, "year"];
+const YEARS = Array.from({ length: currentYear() - FIRST_YEAR + 1 }, (_, i) => FIRST_YEAR + i);
 
 export default function WeeklyOpsPage() {
   const { person, loading, signIn, switchUser } = useIdentity();
-  const [rangeN, setRangeN] = useState(13);
+  const [mode, setMode] = useState<Mode>(13);
+  const [year, setYear] = useState(currentYear());
   const [weekRowsMap, setWeekRowsMap] = useState<Map<number, Row[]>>(new Map());
   const [dataLoading, setDataLoading] = useState(false);
 
   const TODAY_IDX = todayWeekIndex();
 
   const idxs = useMemo(() => {
-    if (rangeN >= WEEK_COUNT) return Array.from({ length: WEEK_COUNT }, (_, i) => i);
-    const start = Math.max(0, TODAY_IDX - rangeN + 1);
+    if (mode === "year") return weeksInYear(year);
+    const start = Math.max(0, TODAY_IDX - mode + 1);
     const arr: number[] = [];
     for (let i = start; i <= TODAY_IDX; i++) arr.push(i);
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeN, TODAY_IDX]);
+  }, [mode, year, TODAY_IDX]);
 
   useEffect(() => {
     if (!person) return;
@@ -69,7 +72,7 @@ export default function WeeklyOpsPage() {
         ]);
       })
     );
-    const label = rangeN >= WEEK_COUNT ? "all 52 weeks" : `last ${rangeN} weeks`;
+    const label = mode === "year" ? String(year) : `last ${mode} weeks`;
     downloadCsv(`YFS Weekly Ops - ${label} - ${todayStamp()}.csv`, out);
   }
 
@@ -84,7 +87,7 @@ export default function WeeklyOpsPage() {
           <div className="brand-divider" />
           <div className="brand-text">
             <h1>Weekly Ops</h1>
-            <div className="sub">All 52 weeks — the full operational view</div>
+            <div className="sub">Week by week — the full operational view</div>
           </div>
         </div>
         <div className="userbadge">
@@ -98,11 +101,20 @@ export default function WeeklyOpsPage() {
 
       <div className="controls">
         <div className="range-pick">
-          {RANGE_OPTIONS.map((n) => (
-            <button key={n} className={rangeN === n ? "active" : ""} onClick={() => setRangeN(n)}>
-              {n >= WEEK_COUNT ? "All 52 weeks" : `Last ${n} weeks`}
+          {MODE_OPTIONS.map((m) => (
+            <button key={m} className={mode === m ? "active" : ""} onClick={() => setMode(m)}>
+              {m === "year" ? "Full year" : `Last ${m} weeks`}
             </button>
           ))}
+          {mode === "year" && (
+            <select className="year-pick" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+              {YEARS.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="controls-right">
           <div className="legend-note">
@@ -264,6 +276,15 @@ export default function WeeklyOpsPage() {
           font-weight: 600;
           padding: 6px 13px;
           border-radius: 999px;
+          cursor: pointer;
+        }
+        .year-pick {
+          border: none;
+          background: transparent;
+          color: var(--ink);
+          font-size: 12.5px;
+          font-weight: 700;
+          padding: 6px 8px;
           cursor: pointer;
         }
         .range-pick button.active {

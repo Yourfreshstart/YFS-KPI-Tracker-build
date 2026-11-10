@@ -6,25 +6,34 @@ import NavTabs from "@/components/NavTabs";
 import IdentityGate from "@/components/IdentityGate";
 import { useIdentity } from "@/lib/useIdentity";
 import { supabase } from "@/lib/supabase";
-import { toDateStr } from "@/lib/weeks";
-import { MONTH_NAMES, monthStart, monthEnd, currentMonthIndex, monthIndexForDateStr } from "@/lib/months";
+import { FIRST_YEAR, currentYear, toDateStr } from "@/lib/weeks";
+import { MONTH_NAMES, monthStart, monthEnd, currentMonthIndex, monthIndexForDateStr, firstMonthOfYear } from "@/lib/months";
 import { SECTIONS, fmtCell, computeOverPeriod, type Row } from "@/lib/metrics";
 import { downloadCsv, csvNumber, csvLabel, todayStamp, type CsvCell } from "@/lib/csv";
 
+const YEARS = Array.from({ length: currentYear() - FIRST_YEAR + 1 }, (_, i) => FIRST_YEAR + i);
+
 export default function MonthlySummaryPage() {
   const { person, loading, signIn, switchUser } = useIdentity();
+  const [year, setYear] = useState(currentYear());
   const [monthRowsMap, setMonthRowsMap] = useState<Map<number, Row[]>>(new Map());
   const [dataLoading, setDataLoading] = useState(false);
 
+  // Months are numbered continuously from Jan 2026 (month 0); BASE is the
+  // number of the selected year's January, LAST_SHOWN its last month that
+  // has started (all 12 for a past year, up to this month for this year).
   const TODAY_MONTH = currentMonthIndex();
+  const BASE = firstMonthOfYear(year);
+  const LAST_SHOWN = Math.min(BASE + 11, TODAY_MONTH);
+  const isThisYear = year === currentYear();
 
   useEffect(() => {
     if (!person) return;
     let cancelled = false;
     (async () => {
       setDataLoading(true);
-      const startStr = toDateStr(monthStart(0));
-      const endStr = toDateStr(monthEnd(TODAY_MONTH));
+      const startStr = toDateStr(monthStart(BASE));
+      const endStr = toDateStr(monthEnd(LAST_SHOWN));
       const { data } = await supabase.from("daily_entries").select("*").gte("entry_date", startStr).lte("entry_date", endStr);
       if (cancelled) return;
       const map = new Map<number, Row[]>();
@@ -40,32 +49,33 @@ export default function MonthlySummaryPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [person]);
+  }, [person, year]);
 
   if (loading) return null;
   if (!person) return <IdentityGate onVerified={signIn} />;
 
+  const totalLabel = isThisYear ? "YTD" : "Full year";
   const ytdRows: Row[] = [];
-  for (let m = 0; m <= TODAY_MONTH; m++) {
+  for (let m = BASE; m <= LAST_SHOWN; m++) {
     ytdRows.push(...(monthRowsMap.get(m) || []));
   }
 
   function downloadMonthly() {
-    const out: CsvCell[][] = [["Section", "Metric", ...MONTH_NAMES, "YTD"]];
+    const out: CsvCell[][] = [["Section", "Metric", ...MONTH_NAMES, totalLabel]];
     SECTIONS.forEach((sec) =>
       sec.rows.forEach((row) => {
         out.push([
           sec.title,
           csvLabel(row.label, row.fmt),
           ...MONTH_NAMES.map((_, m) => {
-            const rows = monthRowsMap.get(m) || [];
-            return m > TODAY_MONTH || rows.length === 0 ? "" : csvNumber(computeOverPeriod(row, rows), row.fmt);
+            const rows = monthRowsMap.get(BASE + m) || [];
+            return BASE + m > TODAY_MONTH || rows.length === 0 ? "" : csvNumber(computeOverPeriod(row, rows), row.fmt);
           }),
           ytdRows.length === 0 ? "" : csvNumber(computeOverPeriod(row, ytdRows), row.fmt),
         ]);
       })
     );
-    downloadCsv(`YFS Monthly Summary - ${todayStamp()}.csv`, out);
+    downloadCsv(`YFS Monthly Summary ${year} - ${todayStamp()}.csv`, out);
   }
 
   return (
@@ -91,11 +101,22 @@ export default function MonthlySummaryPage() {
       <div className="controls">
         <div className="legend-note">
           <span className="star">★</span> also on the CEO Dashboard (13 True KPIs) &nbsp;·&nbsp;
-          <span className="ytd-label">YTD</span> = Jan through the current month
+          <span className="ytd-label">{totalLabel}</span> = {isThisYear ? "Jan through the current month" : "all twelve months"}
         </div>
-        <button className="dl-btn" onClick={downloadMonthly} disabled={dataLoading}>
-          ⬇ Download CSV
-        </button>
+        <div className="controls-right">
+          {YEARS.length > 1 && (
+            <select className="year-pick" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+              {YEARS.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          )}
+          <button className="dl-btn" onClick={downloadMonthly} disabled={dataLoading}>
+            ⬇ Download CSV
+          </button>
+        </div>
       </div>
 
       <div className="table-shell">
@@ -107,11 +128,11 @@ export default function MonthlySummaryPage() {
               <tr>
                 <th>Metric</th>
                 {MONTH_NAMES.map((name, m) => (
-                  <th key={m} className={m === TODAY_MONTH ? "mo-current" : ""}>
+                  <th key={m} className={BASE + m === TODAY_MONTH ? "mo-current" : ""}>
                     {name}
                   </th>
                 ))}
-                <th className="ytd">YTD</th>
+                <th className="ytd">{totalLabel}</th>
               </tr>
             </thead>
             <tbody>
@@ -127,11 +148,11 @@ export default function MonthlySummaryPage() {
                         {row.label}
                       </th>
                       {MONTH_NAMES.map((_, m) => {
-                        const future = m > TODAY_MONTH;
-                        const rows = monthRowsMap.get(m) || [];
+                        const future = BASE + m > TODAY_MONTH;
+                        const rows = monthRowsMap.get(BASE + m) || [];
                         const val = future || rows.length === 0 ? null : computeOverPeriod(row, rows);
                         return (
-                          <td key={m} className={m === TODAY_MONTH ? "mo-current" : ""}>
+                          <td key={m} className={BASE + m === TODAY_MONTH ? "mo-current" : ""}>
                             {fmtCell(val, row.fmt)}
                           </td>
                         );
@@ -157,6 +178,21 @@ export default function MonthlySummaryPage() {
         }
         .controls .legend-note {
           margin-bottom: 0 !important;
+        }
+        .controls-right {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .year-pick {
+          border: 1px solid var(--line);
+          background: var(--surface);
+          color: var(--ink);
+          font-size: 12.5px;
+          font-weight: 700;
+          padding: 6px 10px;
+          border-radius: 999px;
+          cursor: pointer;
         }
         .dl-btn {
           padding: 7px 14px;

@@ -6,6 +6,7 @@ import NavTabs from "@/components/NavTabs";
 import IdentityGate from "@/components/IdentityGate";
 import { useIdentity } from "@/lib/useIdentity";
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetchAll";
 import {
   MISSED_PAYROLLS_FOR_INACTIVE,
   CURRENT_ANSWER_DAYS,
@@ -49,12 +50,14 @@ export default function PulsePage() {
     if (!person) return;
     (async () => {
       setDataLoading(true);
-      const [{ data: pr }, { data: ro }] = await Promise.all([
-        supabase.from("pulse_responses").select("*").order("survey_date", { ascending: false }),
-        supabase.from("rge_roster").select("*"),
+      const [pr, ro] = await Promise.all([
+        fetchAllRows<PulseRow>((from, to) =>
+          supabase.from("pulse_responses").select("*").order("survey_date", { ascending: false }).order("id").range(from, to)
+        ),
+        fetchAllRows<RosterRow>((from, to) => supabase.from("rge_roster").select("*").order("name").range(from, to)),
       ]);
-      setResponses((pr as PulseRow[]) || []);
-      setRoster((ro as RosterRow[]) || []);
+      setResponses(pr);
+      setRoster(ro);
       setDataLoading(false);
     })();
   }, [person]);

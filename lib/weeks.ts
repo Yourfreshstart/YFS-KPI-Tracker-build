@@ -1,6 +1,8 @@
+// Weeks are Monday-Sunday, numbered continuously from week 0 = Mon Jan 5,
+// 2026, with no upper limit -- week 52 is the first week of 2027, and so on.
+// A week belongs to the year its Monday falls in.
 export const MIN_DATE = new Date(2026, 0, 5); // Mon Jan 5, 2026
-export const MAX_DATE = new Date(2026, 11, 31); // Dec 31, 2026
-export const WEEK_COUNT = 52;
+export const FIRST_YEAR = 2026;
 
 export function weekStart(i: number): Date {
   const d = new Date(MIN_DATE);
@@ -23,9 +25,9 @@ export function toDateStr(d: Date): string {
 
 // Counts calendar days between two dates using their UTC-midnight equivalents.
 // Plain (date.getTime() - other.getTime()) / 86400000 is NOT safe here: it
-// silently loses/gains an hour across a Daylight Saving transition (this
-// range spans one, in March), which throws the day count off by one and
-// shifts every week index by one. Date.UTC() sidesteps DST entirely.
+// silently loses/gains an hour across a Daylight Saving transition, which
+// throws the day count off by one and shifts every week index by one.
+// Date.UTC() sidesteps DST entirely.
 function daysBetween(a: Date, b: Date): number {
   const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
   const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
@@ -42,8 +44,23 @@ export function todayWeekIndex(): number {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   if (now < MIN_DATE) return 0;
-  if (now > MAX_DATE) return WEEK_COUNT - 1;
-  return Math.min(WEEK_COUNT - 1, Math.floor(daysBetween(MIN_DATE, now) / 7));
+  return Math.floor(daysBetween(MIN_DATE, now) / 7);
+}
+
+export function currentYear(): number {
+  return new Date().getFullYear();
+}
+
+// Every week whose Monday falls in the given year.
+export function weeksInYear(year: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < 5000; i++) {
+    const y = weekStart(i).getFullYear();
+    if (y < year) continue;
+    if (y > year) break;
+    out.push(i);
+  }
+  return out;
 }
 
 export function fmtWeekLabel(d: Date): string {
