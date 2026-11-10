@@ -542,7 +542,7 @@ async function runSelfCheck(){
         (s['!merges']||[]).forEach(m=>{wantMerges.push(XLSX.utils.encode_range(m));for(let r=m.s.r;r<=m.e.r;r++)for(let c=m.s.c;c<=m.e.c;c++)if(r!==m.s.r||c!==m.s.c)merged.add(XLSX.utils.encode_cell({r,c}));});
         const gotMerges=((w.model&&w.model.merges)||[]).slice().sort().join(','); 
         if(gotMerges!==wantMerges.slice().sort().join(','))bad.merges.push(name);
-        (s['!cols']||[]).forEach((c,i)=>{if(c&&c.wch&&Math.abs((w.getColumn(i+1).width||0)-c.wch)>0.01)bad.widths.push(name+' col '+(i+1));});
+        (s['!cols']||[]).forEach((c,i)=>{if(c&&c.wch&&Math.abs((w.getColumn(i+1).width||0)-c.wch)>0.02)bad.widths.push(name+' col '+(i+1));});
         Object.keys(s).forEach(addr=>{
           if(addr[0]==='!'||merged.has(addr))return;
           const cell=s[addr], bc=w.getCell(addr), bv=bc.value;
@@ -996,7 +996,9 @@ function sheetJsToExcelJs(wb){
       paperSize:1,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:PRINT_TALL_OK.includes(name)?0:1,
       horizontalCentered:true,
       margins:{left:m.left,right:m.right,top:m.top,bottom:m.bottom,header:m.header,footer:m.footer}}});
-    (s['!cols']||[]).forEach((c,i)=>{if(c&&c.wch)ws.getColumn(i+1).width=c.wch;});
+    // ExcelJS treats a width of exactly 9 as ITS default and then leaves the column out of the file
+    // (Excel would show 8.43 instead); 9.01 is visually identical but gets written.
+    (s['!cols']||[]).forEach((c,i)=>{if(c&&c.wch)ws.getColumn(i+1).width=(c.wch===9?9.01:c.wch);});
     Object.keys(s).forEach(addr=>{
       if(addr[0]==='!')return;
       const cell=s[addr], pos=XLSX.utils.decode_cell(addr), t=ws.getCell(pos.r+1,pos.c+1);
