@@ -526,31 +526,7 @@ async function runSelfCheck(){
     const {wb}=buildWorkbook();
     if(typeof ExcelJS==='undefined'){chk('The landscape print library loaded','not loaded',true);}
     else{
-      const back=new ExcelJS.Workbook(); await back.xlsx.load(await sheetJsToExcelJs(wb).xlsx.writeBuffer());
-      const bad={sheets:[],print:[],cells:[],merges:[],widths:[]};
-      const same=(a,b)=>(a==null||a==='')?(b==null||b===''):(typeof a==='number'?Math.abs(a-Number(b))<1e-9:a===b);
-      wb.SheetNames.forEach(name=>{
-        const s=wb.Sheets[name], w=back.getWorksheet(name);
-        if(!w){bad.sheets.push(name);return;}
-        const ps=w.pageSetup||{}, mg=ps.margins||{}, want=s['!margins']||NARROW_MARGINS;
-        if(ps.orientation!=='landscape')bad.print.push(name+': not landscape');
-        if(!ps.fitToPage||ps.fitToWidth!==1)bad.print.push(name+': not fit to one page wide');
-        if((ps.fitToHeight||0)!==(PRINT_TALL_OK.includes(name)?0:1))bad.print.push(name+': wrong page height setting');
-        if(ps.paperSize!==1)bad.print.push(name+': not US Letter');
-        ['left','right','top','bottom'].forEach(k=>{if(Math.abs((mg[k]||0)-want[k])>1e-9)bad.print.push(name+': '+k+' margin');});
-        const merged=new Set(), wantMerges=[];
-        (s['!merges']||[]).forEach(m=>{wantMerges.push(XLSX.utils.encode_range(m));for(let r=m.s.r;r<=m.e.r;r++)for(let c=m.s.c;c<=m.e.c;c++)if(r!==m.s.r||c!==m.s.c)merged.add(XLSX.utils.encode_cell({r,c}));});
-        const gotMerges=((w.model&&w.model.merges)||[]).slice().sort().join(','); 
-        if(gotMerges!==wantMerges.slice().sort().join(','))bad.merges.push(name);
-        (s['!cols']||[]).forEach((c,i)=>{if(c&&c.wch&&Math.abs((w.getColumn(i+1).width||0)-c.wch)>0.02)bad.widths.push(name+' col '+(i+1));});
-        Object.keys(s).forEach(addr=>{
-          if(addr[0]==='!'||merged.has(addr))return;
-          const cell=s[addr], bc=w.getCell(addr), bv=bc.value;
-          if(cell.f){ if(!bv||bv.formula!==cell.f)bad.cells.push(name+'!'+addr+' formula'); }
-          else if(!same(cell.v,(bv&&typeof bv==='object')?bv.result:bv))bad.cells.push(name+'!'+addr+' value');
-          if(cell.z&&bc.numFmt!==cell.z)bad.cells.push(name+'!'+addr+' format');
-        });
-      });
+      const bad=await compareSavedWorkbook(wb);
       const first=a=>a.length?a.length+' problem(s), e.g. '+a.slice(0,3).join('; '):true;
       chk('Saved file: every sheet is there ('+wb.SheetNames.length+')',first(bad.sheets),true);
       chk('Saved file: landscape, US Letter, narrow margins, one page wide on every sheet',first(bad.print),true);
@@ -1024,6 +1000,36 @@ async function saveWorkbook(wb,filename){
     XLSX.writeFile(wb,filename);
     return 'basic';
   }
+}
+
+// Writes the workbook the way saveWorkbook does, reads the file back, and lists every way it differs from the export.
+async function compareSavedWorkbook(wb){
+  const back=new ExcelJS.Workbook(); await back.xlsx.load(await sheetJsToExcelJs(wb).xlsx.writeBuffer());
+  const bad={sheets:[],print:[],cells:[],merges:[],widths:[]};
+  const same=(a,b)=>(a==null||a==='')?(b==null||b===''):(typeof a==='number'?Math.abs(a-Number(b))<1e-9:a===b);
+  wb.SheetNames.forEach(name=>{
+    const s=wb.Sheets[name], w=back.getWorksheet(name);
+    if(!w){bad.sheets.push(name);return;}
+    const ps=w.pageSetup||{}, mg=ps.margins||{}, want=s['!margins']||NARROW_MARGINS;
+    if(ps.orientation!=='landscape')bad.print.push(name+': not landscape');
+    if(!ps.fitToPage||ps.fitToWidth!==1)bad.print.push(name+': not fit to one page wide');
+    if((ps.fitToHeight||0)!==(PRINT_TALL_OK.includes(name)?0:1))bad.print.push(name+': wrong page height setting');
+    if(ps.paperSize!==1)bad.print.push(name+': not US Letter');
+    ['left','right','top','bottom'].forEach(k=>{if(Math.abs((mg[k]||0)-want[k])>1e-9)bad.print.push(name+': '+k+' margin');});
+    const merged=new Set(), wantMerges=[];
+    (s['!merges']||[]).forEach(m=>{wantMerges.push(XLSX.utils.encode_range(m));for(let r=m.s.r;r<=m.e.r;r++)for(let c=m.s.c;c<=m.e.c;c++)if(r!==m.s.r||c!==m.s.c)merged.add(XLSX.utils.encode_cell({r,c}));});
+    const gotMerges=((w.model&&w.model.merges)||[]).slice().sort().join(','); 
+    if(gotMerges!==wantMerges.slice().sort().join(','))bad.merges.push(name);
+    (s['!cols']||[]).forEach((c,i)=>{if(c&&c.wch&&Math.abs((w.getColumn(i+1).width||0)-c.wch)>0.02)bad.widths.push(name+' col '+(i+1));});
+    Object.keys(s).forEach(addr=>{
+      if(addr[0]==='!'||merged.has(addr))return;
+      const cell=s[addr], bc=w.getCell(addr), bv=bc.value;
+      if(cell.f){ if(!bv||bv.formula!==cell.f)bad.cells.push(name+'!'+addr+' formula'); }
+      else if(!same(cell.v,(bv&&typeof bv==='object')?bv.result:bv))bad.cells.push(name+'!'+addr+' value');
+      if(cell.z&&bc.numFmt!==cell.z)bad.cells.push(name+'!'+addr+' format');
+    });
+  });
+  return bad;
 }
 async function downloadWorkbook(){
   const {wb,filename}=buildWorkbook();
