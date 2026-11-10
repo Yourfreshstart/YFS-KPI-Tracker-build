@@ -7,6 +7,8 @@
 -- 1. Remove test records left over from checking the new system.
 delete from pulse_responses where respondent_name like 'Zz %';
 delete from rge_roster where name like 'Zz %';
+delete from app_sessions where person_name like 'Zz %';
+delete from team_members where name like 'Zz %';
 
 -- 2. Delete every open access rule on every table in the public schema.
 do $$
