@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Logo from "@/components/Logo";
 import { supabase } from "@/lib/supabase";
 import { toDateStr } from "@/lib/weeks";
+import { type RosterRow, latestPayrollDate, isActive } from "@/lib/pulse";
 
 // Public, no PIN -- meant to be opened on a tech's own phone (or passed
 // around on one device) right before a company meeting. Name comes from
@@ -106,8 +107,14 @@ export default function PulseSurveyPage() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("rge_roster").select("name").order("name");
-      setRoster((data || []).map((r: { name: string }) => r.name));
+      // Only Active people (see lib/pulse.ts) appear in the name list, so
+      // someone who's left doesn't clutter it. select("*") rather than
+      // naming columns so this keeps working before/after the
+      // pulse_status_override column exists.
+      const { data } = await supabase.from("rge_roster").select("*").order("name");
+      const rows = (data || []) as RosterRow[];
+      const latest = latestPayrollDate(rows);
+      setRoster(rows.filter((r) => isActive(r, latest)).map((r) => r.name));
     })();
   }, []);
 

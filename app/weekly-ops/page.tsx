@@ -8,6 +8,7 @@ import { useIdentity } from "@/lib/useIdentity";
 import { supabase } from "@/lib/supabase";
 import { WEEK_COUNT, weekStart, weekEnd, toDateStr, weekIndexForDateStr, todayWeekIndex, fmtWeekLabel } from "@/lib/weeks";
 import { SECTIONS, fmtCell, type Row } from "@/lib/metrics";
+import { downloadCsv, csvNumber, csvLabel, todayStamp, type CsvCell } from "@/lib/csv";
 
 const RANGE_OPTIONS = [8, 13, 52];
 
@@ -53,6 +54,25 @@ export default function WeeklyOpsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [person, idxs.join(",")]);
 
+  // Same weeks and same computed values as the table on screen, as plain numbers.
+  function downloadWeekly() {
+    const out: CsvCell[][] = [["Section", "Metric", ...idxs.map((i) => `Week of ${toDateStr(weekStart(i))}`)]];
+    SECTIONS.forEach((sec) =>
+      sec.rows.forEach((row) => {
+        out.push([
+          sec.title,
+          csvLabel(row.label, row.fmt),
+          ...idxs.map((i) => {
+            const rows = weekRowsMap.get(i) || [];
+            return i > TODAY_IDX || rows.length === 0 ? "" : csvNumber(row.compute(rows), row.fmt);
+          }),
+        ]);
+      })
+    );
+    const label = rangeN >= WEEK_COUNT ? "all 52 weeks" : `last ${rangeN} weeks`;
+    downloadCsv(`YFS Weekly Ops - ${label} - ${todayStamp()}.csv`, out);
+  }
+
   if (loading) return null;
   if (!person) return <IdentityGate onVerified={signIn} />;
 
@@ -84,8 +104,13 @@ export default function WeeklyOpsPage() {
             </button>
           ))}
         </div>
-        <div className="legend-note">
-          <span className="star">★</span> also on the CEO Dashboard (13 True KPIs)
+        <div className="controls-right">
+          <div className="legend-note">
+            <span className="star">★</span> also on the CEO Dashboard (13 True KPIs)
+          </div>
+          <button className="dl-btn" onClick={downloadWeekly} disabled={dataLoading}>
+            ⬇ Download CSV
+          </button>
         </div>
       </div>
 
@@ -136,6 +161,25 @@ export default function WeeklyOpsPage() {
       </div>
 
       <style jsx>{`
+        .controls-right {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          flex-wrap: wrap;
+        }
+        .dl-btn {
+          padding: 7px 14px;
+          border-radius: 999px;
+          border: 1px solid var(--line);
+          background: var(--surface);
+          color: var(--ink);
+          font-size: 12.5px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .dl-btn:hover {
+          border-color: var(--accent);
+        }
         .wrap {
           max-width: 1240px;
           margin: 0 auto;

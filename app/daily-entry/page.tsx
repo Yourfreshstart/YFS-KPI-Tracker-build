@@ -8,6 +8,7 @@ import IdentityGate from "@/components/IdentityGate";
 import NumberField from "@/components/NumberField";
 import { useIdentity } from "@/lib/useIdentity";
 import { supabase } from "@/lib/supabase";
+import { downloadCsv, todayStamp, type CsvCell } from "@/lib/csv";
 
 const MIN = new Date(2026, 0, 5);
 const MAX = new Date(2026, 11, 31);
@@ -197,6 +198,34 @@ export default function DailyEntryPage() {
     }
   }
 
+  const [downloading, setDownloading] = useState(false);
+
+  // Every day ever entered, one row per day, using the same labels as the
+  // form. Monday-only payroll fields stay blank on other days (they're
+  // genuinely null in the database, not 0).
+  async function downloadAllEntries() {
+    setDownloading(true);
+    const { data } = await supabase.from("daily_entries").select("*").order("entry_date", { ascending: true });
+    const cols: [string, string][] = [
+      ["daily_revenue", "Daily Revenue ($)"],
+      ...SALES_FIELDS,
+      ...SCHEDULING_FIELDS,
+      ...INCIDENT_FIELDS,
+      ...STAFFING_FIELDS,
+      ...MONDAY_FIELDS.map(([k, label, money]) => [k, money ? `${label} ($)` : label] as [string, string]),
+    ];
+    const out: CsvCell[][] = [
+      ["Date", "Day", ...cols.map(([, label]) => label)],
+      ...(data || []).map((row: Record<string, unknown>) => {
+        const d = String(row.entry_date);
+        const day = new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+        return [d, day, ...cols.map(([k]) => (row[k] === null || row[k] === undefined ? "" : Number(row[k])))];
+      }),
+    ];
+    downloadCsv(`YFS Daily Entries - ${todayStamp()}.csv`, out);
+    setDownloading(false);
+  }
+
   if (loading) return null;
   if (!person) return <IdentityGate onVerified={signIn} />;
 
@@ -289,6 +318,9 @@ export default function DailyEntryPage() {
             </>
           )}
         </span>
+        <button className="dl-btn" onClick={downloadAllEntries} disabled={downloading}>
+          {downloading ? "Preparing…" : "⬇ Download all entries (CSV)"}
+        </button>
       </div>
 
       <style jsx>{`
@@ -398,6 +430,24 @@ export default function DailyEntryPage() {
           box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.06);
           padding: 12px 16px;
           margin-top: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .dl-btn {
+          padding: 6px 13px;
+          border-radius: 999px;
+          border: 1px solid var(--line);
+          background: var(--surface-2);
+          color: var(--ink);
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .dl-btn:hover {
+          border-color: var(--accent);
         }
         .status {
           font-size: 12.5px;

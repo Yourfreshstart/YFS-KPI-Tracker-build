@@ -66,6 +66,11 @@ Internal KPI tracking web app for Your Fresh Start Cleaning Service LLC (a resid
 4. If it's a ratio depending on a field only entered some days (like the Monday payroll fields), add it to `WEEK_FILTERED_KEYS` with the right presence-check field.
 5. Nothing else — Weekly Ops, Monthly Summary, CEO Dashboard, and Lists/Admin all pick it up automatically from `SECTIONS`/`kpi_config`.
 
+## Pulse Active/Inactive and CSV downloads
+
+- **Active vs. Inactive** (`lib/pulse.ts` `isActive`): Inactive once someone has missed the last 2 weekly payroll runs, measured against the newest `rge_roster.last_seen_date` (the latest synced payroll), not today's date — so a late payroll run never flips everyone at once. `rge_roster.pulse_status_override` (`'active'`/`'inactive'`/null, from `supabase/add_pulse_status_override.sql`) wins over the automatic rule and is set from the Pulse page. Inactive people are hidden from the Pulse Survey name list and excluded from the company averages; their answers are kept (the 1-year retention cron is unchanged).
+- **CSV downloads** (`lib/csv.ts`): Daily Entry (every day entered), Weekly Ops (the selected week range), Monthly Summary (Jan–Dec + YTD) and Pulse (date range, optional inactive). All client-side from data the page already reads. Values are plain numbers with the unit in the header; blank means no data (same as `—` on screen). Payroll has no download here because the Payroll tool already produces its own Excel workbook.
+
 ## Naming conventions
 
 - `daily_entries` / `EntryFields` / `MetricDef.key` are all `snake_case` and must match exactly across the DB column, the Daily Entry field array, and the metric's `key` in `metrics.ts` — there's no mapping layer.

@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { toDateStr } from "@/lib/weeks";
 import { MONTH_NAMES, monthStart, monthEnd, currentMonthIndex, monthIndexForDateStr } from "@/lib/months";
 import { SECTIONS, fmtCell, computeOverPeriod, type Row } from "@/lib/metrics";
+import { downloadCsv, csvNumber, csvLabel, todayStamp, type CsvCell } from "@/lib/csv";
 
 export default function MonthlySummaryPage() {
   const { person, loading, signIn, switchUser } = useIdentity();
@@ -49,6 +50,24 @@ export default function MonthlySummaryPage() {
     ytdRows.push(...(monthRowsMap.get(m) || []));
   }
 
+  function downloadMonthly() {
+    const out: CsvCell[][] = [["Section", "Metric", ...MONTH_NAMES, "YTD"]];
+    SECTIONS.forEach((sec) =>
+      sec.rows.forEach((row) => {
+        out.push([
+          sec.title,
+          csvLabel(row.label, row.fmt),
+          ...MONTH_NAMES.map((_, m) => {
+            const rows = monthRowsMap.get(m) || [];
+            return m > TODAY_MONTH || rows.length === 0 ? "" : csvNumber(computeOverPeriod(row, rows), row.fmt);
+          }),
+          ytdRows.length === 0 ? "" : csvNumber(computeOverPeriod(row, ytdRows), row.fmt),
+        ]);
+      })
+    );
+    downloadCsv(`YFS Monthly Summary - ${todayStamp()}.csv`, out);
+  }
+
   return (
     <div className="wrap">
       <div className="topbar">
@@ -69,9 +88,14 @@ export default function MonthlySummaryPage() {
 
       <NavTabs />
 
-      <div className="legend-note">
-        <span className="star">★</span> also on the CEO Dashboard (13 True KPIs) &nbsp;·&nbsp;
-        <span className="ytd-label">YTD</span> = Jan through the current month
+      <div className="controls">
+        <div className="legend-note">
+          <span className="star">★</span> also on the CEO Dashboard (13 True KPIs) &nbsp;·&nbsp;
+          <span className="ytd-label">YTD</span> = Jan through the current month
+        </div>
+        <button className="dl-btn" onClick={downloadMonthly} disabled={dataLoading}>
+          ⬇ Download CSV
+        </button>
       </div>
 
       <div className="table-shell">
@@ -123,6 +147,30 @@ export default function MonthlySummaryPage() {
       </div>
 
       <style jsx>{`
+        .controls {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          flex-wrap: wrap;
+          margin-bottom: 14px;
+        }
+        .controls .legend-note {
+          margin-bottom: 0 !important;
+        }
+        .dl-btn {
+          padding: 7px 14px;
+          border-radius: 999px;
+          border: 1px solid var(--line);
+          background: var(--surface);
+          color: var(--ink);
+          font-size: 12.5px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .dl-btn:hover {
+          border-color: var(--accent);
+        }
         .wrap {
           max-width: 1240px;
           margin: 0 auto;
