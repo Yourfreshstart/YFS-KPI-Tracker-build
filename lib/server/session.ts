@@ -72,13 +72,14 @@ export async function startSession(person: Person, res: NextResponse): Promise<s
   const expires = new Date(Date.now() + SESSION_HOURS * 3600 * 1000);
   const db = adminDb();
   await db.from("app_sessions").delete().lt("expires_at", new Date().toISOString());
-  await db.from("app_sessions").insert({
+  const { error: insertError } = await db.from("app_sessions").insert({
     token_hash: hashToken(token),
     person_id: person.id,
     person_name: person.name,
     role: person.role,
     expires_at: expires.toISOString(),
   });
+  if (insertError) throw new Error("startSession: " + insertError.message);
   res.cookies.set({
     name: SESSION_COOKIE,
     value: token,
@@ -99,7 +100,8 @@ export async function endSession(req: NextRequest, res: NextResponse): Promise<v
 
 export async function grantCeo(tokenHash: string, name: string): Promise<void> {
   const until = new Date(Date.now() + CEO_HOURS * 3600 * 1000).toISOString();
-  await adminDb().from("app_sessions").update({ ceo_name: name, ceo_until: until }).eq("token_hash", tokenHash);
+  const { error } = await adminDb().from("app_sessions").update({ ceo_name: name, ceo_until: until }).eq("token_hash", tokenHash);
+  if (error) throw new Error("grantCeo: " + error.message);
 }
 
 // Wrong-PIN limiter: 5 wrong guesses in 15 minutes locks that bucket (a
