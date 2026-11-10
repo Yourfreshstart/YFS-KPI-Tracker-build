@@ -90,7 +90,8 @@ details.tech .body{padding:0 14px 12px}
 
   <div id="results"></div>
 
-  <div class="foot">Your Fresh Start Cleaning Service · payroll runs locally in your browser · no data is uploaded</div>
+  <div class="foot">Your Fresh Start Cleaning Service · payroll runs locally in your browser · no data is uploaded · <a href="#" id="selfTestLink" style="color:inherit">Run math self-check</a>
+    <div id="selfTestOut" style="margin-top:8px;font-size:12.5px;text-align:left"></div></div>
 </div>
 
 <script>/*! xlsx.js (C) 2013-present SheetJS -- http://sheetjs.com */
@@ -372,9 +373,9 @@ function buildRoster(){
     host.appendChild(row);
   });
   host.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{
-    const n=b.parentElement.dataset.n,v=b.dataset.v;S.roster[n].status=v;saveRoster();buildRoster();
+    const n=b.parentElement.dataset.n,v=b.dataset.v;S.roster[n].status=v;saveRoster();saveRosterEntryToDb(n);buildRoster();
   });
-  host.querySelectorAll('.trsel').forEach(s=>s.onchange=()=>{S.roster[s.dataset.n].trainer=s.value;saveRoster();});
+  host.querySelectorAll('.trsel').forEach(s=>s.onchange=()=>{S.roster[s.dataset.n].trainer=s.value;saveRoster();saveRosterEntryToDb(s.dataset.n);});
   $('#rosterCard').classList.remove('hide');
 }
 function ready(){$('#genBtn').disabled=!(S.apptText&&S.assnText);}
@@ -389,6 +390,7 @@ function handleFile(input,which){
     if(slot==='A'){S.apptText=text;$('#fA').textContent='✓ '+f.name;$('#dropA').classList.add('ok');}
     else{S.assnText=text;$('#fB').textContent='✓ '+f.name;$('#dropB').classList.add('ok');}
     parseWeek();buildRoster();ready();
+    loadRosterFromDb();
     syncRosterToSupabase();
   };
   rd.readAsText(f);
@@ -433,6 +435,127 @@ function syncRosterToSupabase(){
       return Promise.all(calls);
     }).catch(()=>{});
 }
+// The Active/Trainee choice (and trainer) is shared between computers through
+// rge_roster.payroll_status / payroll_trainer; the browser copy is just a
+// cache so the tool still works offline. Where the database has a value it
+// wins; where it has none, a non-default browser value (a trainee) is
+// uploaded once so a computer that already had trainees marked carries them
+// over. Plain "active" is never uploaded just because it's the default --
+// otherwise a fresh computer would overwrite real trainee marks elsewhere.
+function rosterHeaders(extra){return {apikey:PULSE_SUPABASE_KEY,Authorization:'Bearer '+PULSE_SUPABASE_KEY,...(extra||{})};}
+function saveRosterEntryToDb(name){
+  const e=S.roster[name]; if(!e)return Promise.resolve();
+  return fetch(PULSE_SUPABASE_URL+'/rest/v1/rge_roster?name=eq.'+encodeURIComponent(name),{
+    method:'PATCH',headers:rosterHeaders({'Content-Type':'application/json'}),
+    body:JSON.stringify({payroll_status:e.status,payroll_trainer:e.trainer||null})
+  }).catch(()=>{});
+}
+async function loadRosterFromDb(){
+  const names=S.techList.slice(); if(!names.length)return;
+  try{
+    const r=await fetch(PULSE_SUPABASE_URL+'/rest/v1/rge_roster?select=name,payroll_status,payroll_trainer&name=in.('+names.map(n=>encodeURIComponent(n)).join(',')+')',{headers:rosterHeaders()});
+    const rows=await r.json(); if(!Array.isArray(rows))return;
+    let changed=false; const uploads=[];
+    rows.forEach(row=>{
+      const n=row.name,cur=S.roster[n];
+      if(row.payroll_status){
+        const next={status:row.payroll_status,trainer:row.payroll_trainer||''};
+        if(!cur||cur.status!==next.status||(cur.trainer||'')!==next.trainer){S.roster[n]=next;changed=true;}
+      }else if(cur&&(cur.status==='trainee'||cur.trainer)){uploads.push(saveRosterEntryToDb(n));}
+    });
+    await Promise.all(uploads);
+    if(changed){saveRoster();buildRoster();}
+  }catch(e){}
+}
+
+// Plain-language math check: runs the real payroll engine on small made-up
+// weeks whose answers were worked out by hand, so any future change that
+// breaks the commission rules shows up immediately. Includes the real
+// Paige Trout / Percy shared-job case that caught the Tier-1 cap bug.
+function runSelfCheck(){
+  const HA='Appointment Date,Start Time,End Time,Price,Tip,Address Line1,Cleaners,Customer Full Name,Customer Company Name';
+  const HB='Cleaner Name,Appointment Date,Appointment Start Time,Appointment End Time,Clock In Time,Clock Out Time,Total Time in Seconds,Address Line1,Address City,Customer Full Name,Customer Company Name,Appointment Status,Appointment Price';
+  const t12=h=>{const hh=Math.floor(h),mm=Math.round((h-hh)*60);return (((hh+11)%12)+1)+':'+String(mm).padStart(2,'0')+' '+(hh>=12?'PM':'AM');};
+  const D='01/05/2026',jobs=[];
+  const job=o=>{o.n=jobs.length+1;jobs.push(o);};
+  const pad=(name,hrs)=>{while(hrs>0.001){const h=Math.min(hrs,12);job({start:9,hrs:h,price:100,cleaners:[[name]]});hrs-=h;}};
+  const A=[],B=[];
+  const build=()=>{
+    jobs.forEach(j=>{
+      const st=t12(j.start),en=t12(j.start+j.hrs),addr='Test St '+j.n,cust=j.customer||('Cust '+j.n);
+      A.push([D,st,en,j.price,j.tip||0,addr,j.cleaners.map(c=>c[0]).join('; '),cust,j.company||''].join(','));
+      j.cleaners.forEach(c=>B.push([c[0],D,st,en,st,en,c[1]!=null?c[1]:Math.round(j.hrs*3600),addr,j.city||'Athens',cust,j.company||'',j.status||'Completed',j.price].join(',')));
+    });
+    return ['title\n'+HA+'\n'+A.join('\n'),'title\n'+HB+'\n'+B.join('\n')];
+  };
+  // --- the made-up week ---
+  pad('T2Solo',26);   job({start:9,hrs:3,price:200,customer:'JobT2',cleaners:[['T2Solo']]});
+  pad('T3Solo',36);   job({start:9,hrs:2,price:100,customer:'JobT3',cleaners:[['T3Solo']]});
+  job({start:9,hrs:2,price:300,customer:'JobCap',cleaners:[['CapSolo']]});
+  job({start:9,hrs:3,price:100,customer:'JobUnder',cleaners:[['UnderSolo']]});
+  job({start:9,hrs:3,price:100,customer:'JobComm',company:'Acme',cleaners:[['CommSolo']]});
+  job({start:9,hrs:3,price:100,customer:'JobLanc',city:'Lancaster',cleaners:[['LancSolo']]});
+  pad('PaigeT',6);    pad('PercyT',26);
+  job({start:13.5,hrs:2.5,price:220,company:'TestCo',customer:'JobShared',cleaners:[['PaigeT',14234],['PercyT',14287]]});
+  pad('CapA',6);      pad('CapB',26);
+  job({start:13.5,hrs:1,price:220,company:'TestCo',customer:'JobSharedCap',cleaners:[['CapA',14234],['CapB',14287]]});
+  job({start:9,hrs:4,price:205,tip:20,customer:'JobSplit',cleaners:[['SplitA',14400],['SplitB',14400]]});
+  job({start:9,hrs:4,price:105,customer:'JobTrain',cleaners:[['TrainerT',14400],['TraineeT',14400]]});
+  job({start:9,hrs:3,price:300,status:'Cancelled',customer:'JobCancel',cleaners:[['StatusT']]});
+  job({start:9,hrs:3,price:100,status:'Active',customer:'JobActive',cleaners:[['StatusT']]});
+  pad('Edge23',23.75); pad('Edge24',24); pad('Edge335',33.75); pad('Edge34',34);
+  const [a,b]=build();
+  const res=PayrollEngine.run(a,b,{TraineeT:true});
+  // --- the checks ---
+  const out=[];
+  const near=(x,y)=>Math.abs(x-y)<0.005;
+  const chk=(name,got,want)=>out.push({name,ok:typeof want==='number'?near(got,want):got===want,got,want});
+  const jobRow=(t,c)=>(res[t].rows.find(j=>j.customer===c)||{});
+  const flagged=(t,type,c)=>res[t].flags.some(f=>f[0]===type&&f[1].includes(c));
+  chk('Tier 2 tech (29 ticket hrs) is Tier 2 at 40%',res.T2Solo.rate,0.40);
+  chk('Tier 2: $200 house = ($200-$5 fuel) x 40%',jobRow('T2Solo','JobT2').commission,78);
+  chk('Tier 2: fuel $5 per house (4 houses)',res.T2Solo.fuel,20);
+  chk('Tier 3 tech (38 ticket hrs) is Tier 3 at 43%',res.T3Solo.rate,0.43);
+  chk('Tier 3: $100 house = ($100-$5) x 43%',jobRow('T3Solo','JobT3').commission,40.85);
+  chk('Tier 1: $300 house is capped at $16 x 2 ticket hrs',jobRow('CapSolo','JobCap').commission,32);
+  chk('Tier 1: cap shows a Tier-1 cap flag',flagged('CapSolo','TIER1_CAP','JobCap'),true);
+  chk('Tier 1: $100 house under the cap = $95 x 36%',jobRow('UnderSolo','JobUnder').commission,34.2);
+  chk('Commercial job: no $5 taken off, 36% of full price',jobRow('CommSolo','JobComm').commission,36);
+  chk('Commercial job: no fuel',res.CommSolo.fuel,0);
+  chk('Lancaster house: $10 fuel',res.LancSolo.fuel,10);
+  chk('Shared job, Tier 1 tech (real Paige case): 36% of her own split share',jobRow('PaigeT','JobShared').commission,39.52);
+  chk('Shared job, Tier 2 tech (real Percy case)',jobRow('PercyT','JobShared').commission,44.08);
+  chk('Shared job: Tier 1 share under her own cap is not capped',flagged('PaigeT','TIER1_CAP','JobShared'),false);
+  chk('Shared job: Tier 1 share over her own cap is capped at $16',jobRow('CapA','JobSharedCap').commission,16);
+  chk('Shared job: cap shows a Tier-1 cap flag',flagged('CapA','TIER1_CAP','JobSharedCap'),true);
+  chk('Equal hours: each tech gets half, 36% of $100',jobRow('SplitA','JobSplit').commission,36);
+  chk('Tip split evenly between two techs ($20 -> $10)',res.SplitA.tips,10);
+  chk('Fuel split evenly between two techs ($5 -> $2.50)',res.SplitA.fuel,2.5);
+  chk('Trainer keeps the full commission on a trainee job',jobRow('TrainerT','JobTrain').commission,36);
+  chk('Trainer pay is $20 for the training day',res.TrainerT.trainerPay,20);
+  chk('Trainer gets the full $5 fuel',res.TrainerT.fuel,5);
+  chk('Trainee earns $0 commission here (paid hourly elsewhere)',res.TraineeT.commission,0);
+  chk('Cancelled job is not paid or counted',res.StatusT.total_ticket,3);
+  chk('Cancelled job shows as cancelled',flagged('StatusT','CANCELLED','JobCancel'),true);
+  chk('Job still showing "Active" in ZenMaid is paid',jobRow('StatusT','JobActive').commission,34.2);
+  chk('Job still showing "Active" is flagged for review',flagged('StatusT','STATUS_REVIEW','JobActive'),true);
+  chk('23.75 ticket hrs is still Tier 1',res.Edge23.tier,1);
+  chk('24 ticket hrs is Tier 2',res.Edge24.tier,2);
+  chk('33.75 ticket hrs is still Tier 2',res.Edge335.tier,2);
+  chk('34 ticket hrs is Tier 3',res.Edge34.tier,3);
+  return out;
+}
+function showSelfCheck(){
+  const host=$('#selfTestOut'); let out;
+  try{out=runSelfCheck();}catch(e){host.innerHTML='<div style="color:#b3261e;font-weight:700">Self-check could not run: '+e.message+'</div>';return;}
+  const bad=out.filter(x=>!x.ok);
+  host.innerHTML=bad.length
+    ?'<div style="color:#b3261e;font-weight:700">'+bad.length+' of '+out.length+' checks FAILED — do not trust this week\'s numbers until this is looked at:</div>'+bad.map(x=>'<div>✗ '+x.name+' (got '+x.got+', expected '+x.want+')</div>').join('')
+    :'<div style="color:#2e7d32;font-weight:700">✓ All '+out.length+' math checks passed</div>';
+}
+$('#selfTestLink').onclick=e=>{e.preventDefault();showSelfCheck();};
+window.runSelfCheck=runSelfCheck;
+
 $('#fileA').onchange=e=>handleFile(e.target,'A');
 $('#fileB').onchange=e=>handleFile(e.target,'B');
 ['dropA','dropB'].forEach((id,i)=>{const el=$('#'+id);
