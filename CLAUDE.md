@@ -39,7 +39,7 @@ Internal KPI tracking web app for Your Fresh Start Cleaning Service LLC (a resid
 
 ## Formulas and dependencies worth knowing before touching `lib/metrics.ts`
 
-- **Weeks are Monday–Sunday, indexed 0–51 from `MIN_DATE` (Mon Jan 5, 2026) to `MAX_DATE` (Dec 31, 2026)** — `lib/weeks.ts`. Months are calendar months within `YEAR = 2026` — `lib/months.ts`. Both are hardcoded to 2026; this app has no concept of a year rollover yet.
+- **Weeks are Monday–Sunday, numbered continuously from week 0 = Mon Jan 5, 2026 with no end date** (`lib/weeks.ts`; a week belongs to the year its Monday falls in, `weeksInYear(year)` lists them). **Months are numbered the same way, month 0 = Jan 2026** (`lib/months.ts`; month 12 = Jan 2027). Weekly Ops and Monthly Summary have a year picker; Daily Entry's date limit is the end of the current year. **Supabase returns max 1,000 rows per request and silently stops** -- any "read everything" query must use `fetchAllRows` (`lib/fetchAll.ts`), as Pulse, the CEO Dashboard Pulse tile, and the Daily Entry CSV do. Date-range queries (one year ≈ 260 rows) are fine as-is.
 - **`weekIndexForDateStr` counts days via `Date.UTC(...)`, not `date.getTime() - other.getTime()`.** The plain-subtraction version silently loses an hour crossing the March DST transition and puts entries in the wrong week column — this was a real shipped bug, fixed once, don't reintroduce it.
 - **`computeOverPeriod` has two opt-in special cases, both keyed by metric `key`:**
   - `PERIOD_SENSITIVE_KEYS` (currently just `avg_rev_per_rge`): for metrics that divide a period SUM by a period AVERAGE, running the formula once over a month's rows inflates the result (~4.3x, one month's worth of weeks). These get averaged per-week instead.
