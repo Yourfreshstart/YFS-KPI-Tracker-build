@@ -6,8 +6,7 @@ import Logo from "@/components/Logo";
 import CeoPinGate from "@/components/CeoPinGate";
 import Sparkline from "@/components/Sparkline";
 import { useCeoAuth } from "@/lib/useCeoAuth";
-import { supabase } from "@/lib/supabase";
-import { fetchAllRows } from "@/lib/fetchAll";
+import { api } from "@/lib/api";
 import { weekStart, weekEnd, toDateStr, weekIndexForDateStr, todayWeekIndex } from "@/lib/weeks";
 import { monthStart, monthEnd, currentMonthIndex, monthIndexForDateStr } from "@/lib/months";
 import { SECTIONS, fmtCell, computeStatus, WHY_TEXT, type Row, type Status } from "@/lib/metrics";
@@ -48,9 +47,8 @@ export default function CeoDashboardPage() {
     (async () => {
       setDataLoading(true);
 
-      const { data: cfgData } = await supabase
-        .from("kpi_config")
-        .select("kpi_key, target_label, owner, off_track_action, critical_below, warning_below, warning_above, critical_above");
+      const cfgRes = await api<{ rows: KpiConfigRow[] }>("/api/kpi-config");
+      const cfgData = cfgRes.ok ? cfgRes.data.rows : null;
       if (!cancelled && cfgData) {
         const map: Record<string, KpiConfigRow> = {};
         cfgData.forEach((c: KpiConfigRow) => (map[c.kpi_key] = c));
@@ -64,11 +62,8 @@ export default function CeoDashboardPage() {
       const weekRangeEnd = weekEnd(LAST_COMPLETE_WEEK);
       const monthRangeEnd = monthEnd(CURRENT_MONTH);
       const rangeEnd = monthRangeEnd > weekRangeEnd ? monthRangeEnd : weekRangeEnd;
-      const { data } = await supabase
-        .from("daily_entries")
-        .select("*")
-        .gte("entry_date", toDateStr(rangeStart))
-        .lte("entry_date", toDateStr(rangeEnd));
+      const entRes = await api<{ rows: Row[] }>(`/api/entries?from=${toDateStr(rangeStart)}&to=${toDateStr(rangeEnd)}`);
+      const data = entRes.ok ? entRes.data.rows : [];
 
       if (cancelled) return;
 
@@ -86,10 +81,9 @@ export default function CeoDashboardPage() {
       setWeekRowsMap(wMap);
       setMonthRowsMap(mMap);
 
-      const [pr, ro] = await Promise.all([
-        fetchAllRows<PulseRow>((from, to) => supabase.from("pulse_responses").select("*").order("id").range(from, to)),
-        fetchAllRows<RosterRow>((from, to) => supabase.from("rge_roster").select("*").order("name").range(from, to)),
-      ]);
+      const pulseRes = await api<{ responses: PulseRow[]; roster: RosterRow[] }>("/api/pulse");
+      const pr = pulseRes.ok ? pulseRes.data.responses : [];
+      const ro = pulseRes.ok ? pulseRes.data.roster : [];
       if (!cancelled) {
         setPulseResponses(pr);
         setPulseRoster(ro);

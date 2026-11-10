@@ -5,8 +5,7 @@ import Logo from "@/components/Logo";
 import NavTabs from "@/components/NavTabs";
 import IdentityGate from "@/components/IdentityGate";
 import { useIdentity } from "@/lib/useIdentity";
-import { supabase } from "@/lib/supabase";
-import { fetchAllRows } from "@/lib/fetchAll";
+import { api } from "@/lib/api";
 import {
   MISSED_PAYROLLS_FOR_INACTIVE,
   CURRENT_ANSWER_DAYS,
@@ -50,14 +49,9 @@ export default function PulsePage() {
     if (!person) return;
     (async () => {
       setDataLoading(true);
-      const [pr, ro] = await Promise.all([
-        fetchAllRows<PulseRow>((from, to) =>
-          supabase.from("pulse_responses").select("*").order("survey_date", { ascending: false }).order("id").range(from, to)
-        ),
-        fetchAllRows<RosterRow>((from, to) => supabase.from("rge_roster").select("*").order("name").range(from, to)),
-      ]);
-      setResponses(pr);
-      setRoster(ro);
+      const r = await api<{ responses: PulseRow[]; roster: RosterRow[] }>("/api/pulse");
+      setResponses(r.ok ? r.data.responses : []);
+      setRoster(r.ok ? r.data.roster : []);
       setDataLoading(false);
     })();
   }, [person]);
@@ -90,11 +84,11 @@ export default function PulsePage() {
     setOverrideError("");
     const prev = roster;
     setRoster((rs) => rs.map((r) => (r.name === name ? { ...r, pulse_status_override: value } : r)));
-    const { error } = await supabase.from("rge_roster").update({ pulse_status_override: value }).eq("name", name);
-    if (error) {
+    const r = await api("/api/pulse", { method: "PATCH", body: { name, override: value } });
+    if (!r.ok) {
       setRoster(prev);
       setOverrideError(
-        "Couldn't save that status change. If this is the first time, the database update (add_pulse_status_override.sql) may not have been run yet."
+        "Couldn't save that status change. Please try again."
       );
     }
   }

@@ -1,61 +1,56 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { api, AUTH_LOST_EVENT } from "@/lib/api";
 
 export type Person = { id: string; name: string; role: string };
 
-const SESSION_KEY = "yfs_session";
-const SESSION_HOURS = 8;
-
-function readSession(): Person | null {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    const ageHours = (Date.now() - data.at) / 3600000;
-    if (ageHours >= 0 && ageHours < SESSION_HOURS) return data.person;
-    return null;
-  } catch {
-    return null;
-  }
-}
+// Who's signed in is decided by the server (a private cookie it sets when the
+// PIN is right) -- this hook just asks it. Each page mounts its own copy, so
+// a tiny localStorage "ping" tells other open tabs to ask again after someone
+// signs in or switches.
+const PING_KEY = "yfs_auth_ping";
 
 export function useIdentity() {
   const [person, setPerson] = useState<Person | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setPerson(readSession());
+  const refresh = useCallback(async () => {
+    const r = await api<{ person: Person | null }>("/api/auth/me");
+    setPerson(r.ok ? r.data.person : null);
     setLoading(false);
+  }, []);
 
-    // Each page (Daily Entry / Weekly Ops / Monthly Summary) mounts its own
-    // copy of this hook. Without this, switching who's signed in on one tab
-    // (or one page) left every other already-open tab/page showing the old
-    // person until it was manually reloaded -- the "still says Teather"
-    // problem. The native `storage` event fires in OTHER tabs whenever
-    // localStorage changes, so this keeps them all in sync.
+  useEffect(() => {
+    refresh();
     function onStorage(e: StorageEvent) {
-      if (e.key === SESSION_KEY || e.key === null) {
-        setPerson(readSession());
-      }
+      if (e.key === PING_KEY || e.key === null) refresh();
+    }
+    function onLost() {
+      setPerson(null);
     }
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+    window.addEventListener(AUTH_LOST_EVENT, onLost);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(AUTH_LOST_EVENT, onLost);
+    };
+  }, [refresh]);
 
   const signIn = useCallback((p: Person) => {
     setPerson(p);
     try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify({ person: p, at: Date.now() }));
+      localStorage.setItem(PING_KEY, String(Date.now()));
     } catch {
       // ignore storage errors (private browsing, etc.)
     }
   }, []);
 
-  const switchUser = useCallback(() => {
+  const switchUser = useCallback(async () => {
     setPerson(null);
+    await api("/api/auth/logout", { body: {} });
     try {
-      localStorage.removeItem(SESSION_KEY);
+      localStorage.setItem(PING_KEY, String(Date.now()));
     } catch {
       // ignore
     }

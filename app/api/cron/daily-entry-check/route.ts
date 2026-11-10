@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { adminDb } from "@/lib/server/db";
 
 // Checks whether the previous business day's Daily Entry was actually filled
 // in, and emails a reminder if not. Triggered by Vercel Cron (see
 // vercel.json) once a day, Mon-Fri, at a time that's safely after 5pm
 // Eastern in both DST states (5:30pm EST / 6:30pm EDT).
 
-const SUPABASE_URL = "https://zhbuxfflfyhqxzgtpwkf.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_90rqTx_I_-1cTK7TksemRw_YRePULFj";
 const NOTIFY_EMAIL = "cleanteam@yourfreshstartclean.com";
 const APP_URL = "https://yfs-kpi-tracker-build.vercel.app";
 
@@ -49,10 +48,11 @@ export async function GET(req: NextRequest) {
 
   const dateStr = prevBusinessDayStr(today);
 
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/daily_entries?entry_date=eq.${dateStr}&select=entry_date,entered_by`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-  });
-  const rows = await res.json();
+  const { data: rows, error: lookupError } = await adminDb().from("daily_entries").select("entry_date,entered_by").eq("entry_date", dateStr);
+  if (lookupError) {
+    // Never send a "missing" email just because the lookup itself failed.
+    return NextResponse.json({ ok: false, date: dateStr, status: "lookup failed" }, { status: 500 });
+  }
   const entered = Array.isArray(rows) && rows.length > 0 && !!rows[0].entered_by;
 
   if (entered) {

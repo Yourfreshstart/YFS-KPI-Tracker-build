@@ -1,21 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import type { Person } from "@/lib/useIdentity";
 import PinPad from "@/components/PinPad";
-
-const NAMES = ["Teather", "Rachael", "Jennifer", "Jhara"];
 
 export default function IdentityGate({
   onVerified,
 }: {
   onVerified: (person: Person) => void;
 }) {
+  const [names, setNames] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const r = await api<{ names: string[] }>("/api/team/names");
+      if (r.ok) setNames(r.data.names);
+    })();
+  }, []);
 
   function choosePerson(name: string) {
     setSelected(name);
@@ -28,17 +34,16 @@ export default function IdentityGate({
     setError("");
     if (digits.length === 4 && selected) {
       setChecking(true);
-      const { data, error: rpcError } = await supabase.rpc("verify_pin", {
-        input_name: selected,
-        input_pin: digits,
+      const r = await api<{ person?: Person; error?: string }>("/api/auth/login", {
+        body: { name: selected, pin: digits },
       });
       setChecking(false);
-      if (rpcError || !data || data.length === 0) {
-        setError("Incorrect PIN, try again");
+      if (!r.ok || !r.data.person) {
+        setError(r.data.error || "Incorrect PIN, try again");
         setPin("");
         return;
       }
-      onVerified(data[0] as Person);
+      onVerified(r.data.person);
     }
   }
 
@@ -50,7 +55,7 @@ export default function IdentityGate({
             <h2>Who&apos;s entering today?</h2>
             <div className="sub">Just so we know who to check with if a number looks off.</div>
             <div className="person-row">
-              {NAMES.map((name) => (
+              {names.map((name) => (
                 <button key={name} className="person-btn" onClick={() => choosePerson(name)}>
                   {name}
                 </button>

@@ -5,7 +5,7 @@ import Logo from "@/components/Logo";
 import NavTabs from "@/components/NavTabs";
 import IdentityGate from "@/components/IdentityGate";
 import { useIdentity } from "@/lib/useIdentity";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { FIRST_YEAR, currentYear, toDateStr } from "@/lib/weeks";
 import { MONTH_NAMES, monthStart, monthEnd, currentMonthIndex, monthIndexForDateStr, firstMonthOfYear } from "@/lib/months";
 import { SECTIONS, fmtCell, computeOverPeriod, type Row } from "@/lib/metrics";
@@ -34,7 +34,8 @@ export default function MonthlySummaryPage() {
       setDataLoading(true);
       const startStr = toDateStr(monthStart(BASE));
       const endStr = toDateStr(monthEnd(LAST_SHOWN));
-      const { data } = await supabase.from("daily_entries").select("*").gte("entry_date", startStr).lte("entry_date", endStr);
+      const r = await api<{ rows: Row[] }>(`/api/entries?from=${startStr}&to=${endStr}`);
+      const data = r.ok ? r.data.rows : [];
       if (cancelled) return;
       const map = new Map<number, Row[]>();
       (data || []).forEach((row: Row) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import Logo from "@/components/Logo";
 import PinPad from "@/components/PinPad";
 
@@ -21,24 +21,16 @@ export default function CeoPinGate({
     setError("");
     if (digits.length === 4) {
       setChecking(true);
-      let matched: string | null = null;
-      for (const name of allowedNames) {
-        const { data, error: rpcError } = await supabase.rpc("verify_pin", {
-          input_name: name,
-          input_pin: digits,
-        });
-        if (!rpcError && data && data.length > 0) {
-          matched = name;
-          break;
-        }
-      }
+      const r = await api<{ ceoName?: string; error?: string }>("/api/auth/ceo", { body: { pin: digits } });
       setChecking(false);
-      if (!matched) {
-        setError("Incorrect PIN, try again");
+      // The server accepts Teather's or Jennifer's PIN for this step; this
+      // page may allow fewer people (Lists/Admin is Teather only).
+      if (!r.ok || !r.data.ceoName || !allowedNames.includes(r.data.ceoName)) {
+        setError(r.data.error || "Incorrect PIN, try again");
         setPin("");
         return;
       }
-      onUnlock(matched);
+      onUnlock(r.data.ceoName);
     }
   }
 

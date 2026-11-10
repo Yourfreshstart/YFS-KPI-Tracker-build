@@ -5,7 +5,7 @@ import Logo from "@/components/Logo";
 import NavTabs from "@/components/NavTabs";
 import IdentityGate from "@/components/IdentityGate";
 import { useIdentity } from "@/lib/useIdentity";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { FIRST_YEAR, currentYear, weeksInYear, weekStart, weekEnd, toDateStr, weekIndexForDateStr, todayWeekIndex, fmtWeekLabel } from "@/lib/weeks";
 import { SECTIONS, fmtCell, type Row } from "@/lib/metrics";
 import { downloadCsv, csvNumber, csvLabel, todayStamp, type CsvCell } from "@/lib/csv";
@@ -40,7 +40,8 @@ export default function WeeklyOpsPage() {
       const startStr = toDateStr(weekStart(idxs[0]));
       const lastVisible = Math.min(idxs[idxs.length - 1], TODAY_IDX);
       const endStr = toDateStr(weekEnd(lastVisible));
-      const { data } = await supabase.from("daily_entries").select("*").gte("entry_date", startStr).lte("entry_date", endStr);
+      const r = await api<{ rows: Row[] }>(`/api/entries?from=${startStr}&to=${endStr}`);
+      const data = r.ok ? r.data.rows : [];
       if (cancelled) return;
       const map = new Map<number, Row[]>();
       (data || []).forEach((row: Row) => {

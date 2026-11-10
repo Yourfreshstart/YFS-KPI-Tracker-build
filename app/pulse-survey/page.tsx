@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Logo from "@/components/Logo";
-import { supabase } from "@/lib/supabase";
-import { toDateStr } from "@/lib/weeks";
-import { type RosterRow, latestPayrollDate, isActive } from "@/lib/pulse";
+import { api } from "@/lib/api";
 
 // Public, no PIN -- meant to be opened on a tech's own phone (or passed
 // around on one device) right before a company meeting. Name comes from
@@ -107,14 +105,10 @@ export default function PulseSurveyPage() {
 
   useEffect(() => {
     (async () => {
-      // Only Active people (see lib/pulse.ts) appear in the name list, so
-      // someone who's left doesn't clutter it. select("*") rather than
-      // naming columns so this keeps working before/after the
-      // pulse_status_override column exists.
-      const { data } = await supabase.from("rge_roster").select("*").order("name");
-      const rows = (data || []) as RosterRow[];
-      const latest = latestPayrollDate(rows);
-      setRoster(rows.filter((r) => isActive(r, latest)).map((r) => r.name));
+      // The server sends only the names of Active people (see lib/pulse.ts),
+      // so someone who's left doesn't clutter the list.
+      const r = await api<{ names: string[] }>("/api/pulse-survey");
+      if (r.ok) setRoster(r.data.names);
     })();
   }, []);
 
@@ -130,10 +124,9 @@ export default function PulseSurveyPage() {
     if (!complete) return;
     setSubmitting(true);
     setError("");
-    const { error: err } = await supabase.from("pulse_responses").upsert(
-      {
-        respondent_name: name,
-        survey_date: toDateStr(new Date()),
+    const res = await api<{ error?: string }>("/api/pulse-survey", {
+      body: {
+        name,
         happiness: answers.happiness,
         leadership_support: answers.leadership_support,
         job_manageability: answers.job_manageability,
@@ -141,8 +134,8 @@ export default function PulseSurveyPage() {
         likelihood_to_recommend: answers.likelihood_to_recommend,
         feedback_text: answers.feedback_text.trim() || null,
       },
-      { onConflict: "respondent_name,survey_date" }
-    );
+    });
+    const err = res.ok ? null : res.data.error || "error";
     setSubmitting(false);
     if (err) {
       setError("Something went wrong — try again.");

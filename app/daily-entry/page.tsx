@@ -7,9 +7,8 @@ import DateNav from "@/components/DateNav";
 import IdentityGate from "@/components/IdentityGate";
 import NumberField from "@/components/NumberField";
 import { useIdentity } from "@/lib/useIdentity";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { downloadCsv, todayStamp, type CsvCell } from "@/lib/csv";
-import { fetchAllRows } from "@/lib/fetchAll";
 
 const MIN = new Date(2026, 0, 5);
 // Last day of the current year -- rolls forward on its own each January.
@@ -166,13 +165,9 @@ export default function DailyEntryPage() {
     let cancelled = false;
     (async () => {
       setEntryLoading(true);
-      const { data } = await supabase
-        .from("daily_entries")
-        .select("*")
-        .eq("entry_date", toDateStr(date))
-        .maybeSingle();
+      const r = await api<{ row: Record<string, unknown> | null }>(`/api/entries/${toDateStr(date)}`);
       if (cancelled) return;
-      setEntry(data ? mapRowToFields(data) : DEFAULT_ENTRY);
+      setEntry(r.ok && r.data.row ? mapRowToFields(r.data.row) : DEFAULT_ENTRY);
       setLastSaved(null);
       setEntryLoading(false);
     })();
@@ -185,17 +180,8 @@ export default function DailyEntryPage() {
     if (!person) return;
     const updated = { ...entry, [key]: value };
     setEntry(updated);
-    const { error } = await supabase.from("daily_entries").upsert(
-      {
-        entry_date: toDateStr(date),
-        entered_by: person.id,
-        last_edited_by: person.id,
-        last_edited_at: new Date().toISOString(),
-        ...updated,
-      },
-      { onConflict: "entry_date" }
-    );
-    if (!error) {
+    const r = await api(`/api/entries/${toDateStr(date)}`, { method: "PUT", body: { fields: updated } });
+    if (r.ok) {
       setLastSaved(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
     }
   }
@@ -207,9 +193,8 @@ export default function DailyEntryPage() {
   // genuinely null in the database, not 0).
   async function downloadAllEntries() {
     setDownloading(true);
-    const data = await fetchAllRows<Record<string, unknown>>((from, to) =>
-      supabase.from("daily_entries").select("*").order("entry_date", { ascending: true }).range(from, to)
-    );
+    const r = await api<{ rows: Record<string, unknown>[] }>("/api/entries?all=1");
+    const data = r.ok ? r.data.rows : [];
     const cols: [string, string][] = [
       ["daily_revenue", "Daily Revenue ($)"],
       ...SALES_FIELDS,
