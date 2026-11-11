@@ -15,6 +15,9 @@ import { PULSE_METRICS, computeIncluded, computeCompanyAverages, type PulseRow, 
 type KpiConfigRow = {
   kpi_key: string;
   target_label: string;
+  good_label: string | null;
+  watch_label: string | null;
+  critical_label: string | null;
   owner: string;
   off_track_action: string;
   critical_below: number | null;
@@ -160,7 +163,7 @@ export default function CeoDashboardPage() {
                 <span className="hero-label">Gross Revenue · Most recently completed week</span>
                 <span className="hero-value">{fmtCell(heroVal, "usd")}</span>
                 <span className="hero-target">
-                  Target {heroCfg?.target_label ?? "$17,500/week"} · good ≥ $17,500 · watch $16,500–17,499 · critical &lt; $16,500
+                  Target {heroCfg?.target_label ?? "—"}{heroCfg?.good_label ? ` · good ${heroCfg.good_label}` : ""}{heroCfg?.watch_label ? ` · watch ${heroCfg.watch_label}` : ""}{heroCfg?.critical_label ? ` · critical ${heroCfg.critical_label}` : ""}
                 </span>
               </div>
               <div className="hero-right">
