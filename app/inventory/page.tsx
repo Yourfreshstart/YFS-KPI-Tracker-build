@@ -15,6 +15,7 @@ import {
   fmtOne,
   localToday,
   mondayOf,
+  nextOrderDay,
   suggestedOrder,
   unitWord,
   validAmount,
@@ -75,6 +76,9 @@ export default function InventoryPage() {
   const [addMsg, setAddMsg] = useState("");
   const [actionMsg, setActionMsg] = useState("");
   const [showAll, setShowAll] = useState(false);
+  const [openEarly, setOpenEarly] = useState(false);
+  const orderDay = useMemo(() => nextOrderDay(today), [today]);
+  const isOrderWeek = orderDay === thisMonday;
   const [orderEdits, setOrderEdits] = useState<Record<number, string>>({});
   const [other, setOther] = useState<OtherLine[]>([]);
   const [otherName, setOtherName] = useState("");
@@ -399,7 +403,7 @@ export default function InventoryPage() {
           <section className="inv-section">
             <div className="inv-head">
               <h2>Supply averages</h2>
-              <span className="inv-note">Click a supply to see it month by month</span>
+              <span className="inv-note">Click a supply to see it month by month. "Slowly rising/dropping" compares the last 13 weeks, not just the last 4.</span>
             </div>
             <div className="inv-panel inv-scroll">
               <table className="inv-table">
@@ -679,6 +683,24 @@ export default function InventoryPage() {
               <h2>Order list</h2>
               <span className="inv-note">Suggested amounts cover a month plus 2 weeks of back stock. Change any number.</span>
             </div>
+            {isOrderWeek ? (
+              <div className="inv-orderday on">
+                <b>Order day: {fmtDate(orderDay, { weekday: "long", month: "long", day: "numeric" })}.</b> Save the Monday count first so the
+                suggested amounts use this week&apos;s shelf counts.
+              </div>
+            ) : (
+              <div className="inv-orderday">
+                <span>
+                  Orders go in on the first Monday of each month. Next order day:{" "}
+                  <b>{fmtDate(orderDay, { weekday: "long", month: "long", day: "numeric" })}</b>.
+                </span>
+                <button className="inv-btn small" onClick={() => setOpenEarly(!openEarly)}>
+                  {openEarly ? "Hide the order list" : "Open the order list early"}
+                </button>
+              </div>
+            )}
+            {isOrderWeek || openEarly ? (
+            <>
             <div className="inv-order-grid">
               <div className="inv-panel inv-order-block">
                 <h3>Supplies</h3>
@@ -772,6 +794,8 @@ export default function InventoryPage() {
                 {sending ? "Sending…" : "Send order"}
               </button>
             </div>
+            </>
+            ) : null}
           </section>
 
           <section className="inv-section">
@@ -1191,6 +1215,23 @@ export default function InventoryPage() {
           border-top: 1px solid var(--line);
           background: var(--surface-2);
           border-radius: 0 0 12px 12px;
+        }
+        .inv-orderday {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+          background: var(--surface-2);
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          padding: 10px 14px;
+          font-size: 13px;
+          color: var(--ink-muted);
+        }
+        .inv-orderday.on {
+          background: var(--green-soft);
+          color: var(--ink);
         }
         .inv-order-grid {
           display: grid;

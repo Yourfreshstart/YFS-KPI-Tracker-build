@@ -156,8 +156,13 @@ export type Analysis = {
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const meanPerTech = (ws: UsageWeek[]) => (ws.length ? sum(ws.map((w) => w.used / w.techs)) / ws.length : 0);
 
-function judge(unit: Unit, actual: number, expected: number): "more" | "less" | null {
-  const min = MIN_DIFF[unit];
+// The slow check spans 13 weeks (about 3 months), so it needs about 1 unit
+// per month of difference -- 3 gallons/boxes/bags or 6 bottles/cans -- before
+// it flags. With only 1 unit it flagged half the list over tiny changes.
+export const SLOW_MIN_FACTOR = 3;
+
+function judge(unit: Unit, actual: number, expected: number, minFactor = 1): "more" | "less" | null {
+  const min = MIN_DIFF[unit] * minFactor;
   if (actual - expected >= min - 1e-9 && actual >= expected * (1 + MORE_PCT)) return "more";
   if (expected - actual >= min - 1e-9 && actual <= expected * (1 - LESS_PCT)) return "less";
   return null;
@@ -203,7 +208,7 @@ export function analyze(supply: Supply, counts: CountRow[], techs: Techs, today:
       const older = weeks.slice(0, weeks.length - SLOW_WEEKS).slice(-BASELINE_MAX_WEEKS);
       slowActual = sum(window.map((w) => w.used));
       slowExpected = meanPerTech(older) * sum(window.map((w) => w.techs));
-      const s = judge(supply.unit, slowActual, slowExpected);
+      const s = judge(supply.unit, slowActual, slowExpected, SLOW_MIN_FACTOR);
       if (s === "more") flag = "slow_up";
       if (s === "less") flag = "slow_down";
     }
@@ -253,4 +258,22 @@ export function suggestedOrder(a: Analysis, curTechs: number | null, onShelf: nu
   const target = weekly * (WEEKS_PER_MONTH + BACK_STOCK_WEEKS);
   const need = target - (onShelf ?? 0);
   return need > 1e-9 ? Math.ceil(need - 1e-9) : 0;
+}
+
+// Orders go in on the first Monday of each month.
+export function firstMondayOf(dateStr: string): string {
+  const first = dateStr.slice(0, 8) + "01";
+  const m = mondayOf(first);
+  return m < first ? addDays(m, 7) : m;
+}
+// The order day for this week if this week is the first-Monday week,
+// otherwise the next first Monday on or after today.
+export function nextOrderDay(today: string): string {
+  const thisMonday = mondayOf(today);
+  if (firstMondayOf(thisMonday) === thisMonday) return thisMonday;
+  const thisMonth = firstMondayOf(today);
+  if (thisMonth >= today) return thisMonth;
+  const [y, m] = today.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m, 1));
+  return firstMondayOf(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`);
 }
