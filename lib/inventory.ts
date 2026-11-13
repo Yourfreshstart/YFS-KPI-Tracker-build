@@ -156,10 +156,10 @@ export type Analysis = {
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const meanPerTech = (ws: UsageWeek[]) => (ws.length ? sum(ws.map((w) => w.used / w.techs)) / ws.length : 0);
 
-// The slow check spans 13 weeks (about 3 months), so it needs about 1 unit
-// per month of difference -- 3 gallons/boxes/bags or 6 bottles/cans -- before
-// it flags. With only 1 unit it flagged half the list over tiny changes.
-export const SLOW_MIN_FACTOR = 3;
+// The slow check uses the same minimum difference as the 4-week check (1
+// gallon/box/bag, 2 bottles/cans) over its 13 weeks. A 3x minimum was tried
+// and Teather chose to keep it at 1x (Nov 2026).
+export const SLOW_MIN_FACTOR = 1;
 
 function judge(unit: Unit, actual: number, expected: number, minFactor = 1): "more" | "less" | null {
   const min = MIN_DIFF[unit] * minFactor;

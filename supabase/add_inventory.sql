@@ -122,7 +122,7 @@ from (values
 ('2026-05-25','Zep Heavy Duty',4.25,0),
 ('2026-05-25','Rejuvenate Concentrate',2,0),
 ('2026-05-25','Rejuvenate Spray',6,0),
-('2026-05-25','SOS Pads',0.5,5),
+('2026-05-25','SOS Pads',5.75,5),
 ('2026-05-25','Glass Cleaner',19,0),
 ('2026-05-25','Lime-Away',8,0),
 ('2026-05-25','Tilex',8,0),
