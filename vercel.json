@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/cron/daily-entry-check", "schedule": "30 22 * * 1-5" },
-    { "path": "/api/cron/pulse-retention-cleanup", "schedule": "0 6 1 * *" }
+    { "path": "/api/cron/pulse-retention-cleanup", "schedule": "0 6 1 * *" },
+    { "path": "/api/cron/inventory-check", "schedule": "0 14 * * 2" }
   ]
 }

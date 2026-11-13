@@ -20,6 +20,10 @@ const TABLES: { name: string; order: string }[] = [
   { name: "team_members", order: "name" },
   { name: "rge_roster", order: "name" },
   { name: "pulse_responses", order: "id" },
+  { name: "inventory_supplies", order: "id" },
+  { name: "inventory_counts", order: "id" },
+  { name: "inventory_order_picks", order: "name" },
+  { name: "inventory_orders", order: "id" },
 ];
 
 function tokenOk(header: string | null): boolean {
