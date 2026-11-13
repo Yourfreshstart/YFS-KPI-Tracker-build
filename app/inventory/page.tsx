@@ -318,7 +318,7 @@ export default function InventoryPage() {
           <div>
             <h1>Inventory</h1>
             <div className="inv-sub">
-              Next count: {fmtDate(thisMonday)}
+              Next count: {fmtDate(today === thisMonday ? thisMonday : addDays(thisMonday, 7))}
               {techCount !== null ? ` · ${techCount} technicians (from Daily Entry)` : ""} · {person.name}
             </div>
           </div>
